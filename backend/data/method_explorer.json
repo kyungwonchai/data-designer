@@ -1,0 +1,1386 @@
+[
+  {
+    "id": "pd-lambda-apply-map-select",
+    "category": "1. 람다(Lambda) & 파생변수",
+    "root_object": "df[\"col\"].",
+    "method_name": "apply(lambda) vs map(dict) vs np.select",
+    "compare_group": "조건부 파생변수 3대 문법",
+    "syntax": "df.apply(lambda row: ..., axis=1) | np.select(conds, choices)",
+    "korean_desc": "SMD 공정 설비 로그에서 마운팅 X/Y 오차 및 진공압 복합 조건에 따른 장착 리스크 판정을 람다 apply와 고속 벡터화 np.select로 비교 처리합니다.",
+    "when_to_use": "정밀한 파이썬 조건문은 apply(lambda), 대량의 공정 센서 데이터 초고속 처리는 np.select 추천(50배 이상 빠름).",
+    "pros_cons": "⭐ np.select는 C레벨 벡터 연산으로 대용량 센서 로그 처리에 압도적. apply(lambda)는 모든 사용자 함수 로직을 유연하게 적용 가능.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# 1. 람다식 apply (장착 오차 및 진공압 복합 조건으로 상태 등급 부여)\nres = df.apply(lambda r: \"Critical_Shift\" if (abs(r[\"Offset_X\"]) > 25 or abs(r[\"Offset_Y\"]) > 25) and r[\"Vacuum_Pressure\"] > -68 else (\"Mild_Drift\" if abs(r[\"Offset_X\"]) > 15 or abs(r[\"Offset_Y\"]) > 15 else \"Stable\"), axis=1)\n\nprint(\"=== 1. apply(lambda row: ..., axis=1) 실행 결과 (상위 5건) ===\")\nprint(res.head())\n",
+    "spotlight_example": {
+      "title": "🔍 핵심 1행 대표 설비 로그 집중 추적",
+      "target_item": "PCB_00003 (X오차 -28.5um, 진공 -75.7kPa) vs PCB_00001 (정상 범위)",
+      "before_snippet": "[Offset_X: -28.51, Offset_Y: -2.87, Vac: -75.71]",
+      "operation_desc": "조건식 (|X|>25 or |Y|>25) and Vac > -68 평가 ➔ 진공압이 안정적이므로 Mild_Drift 판정",
+      "after_snippet": "➡️ 결과: Mild_Drift",
+      "concept_rule": "람다식은 각 행의 [Offset_X, Offset_Y, Vacuum_Pressure] 값을 1줄씩 읽어 if-else 조건 분기를 거쳐 파생 변수를 결정합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "행 단위 센서 로그 반복 (Row Iteration)",
+        "desc": "DataFrame의 0번 인덱스부터 마지막 인덱스까지 각 행을 한 줄씩 꺼내어 람다 함수의 파라미터 r로 전달합니다."
+      },
+      {
+        "step": 2,
+        "title": "설비 오차 복합 조건 분기 평가",
+        "desc": "① (|Offset_X| > 25 or |Offset_Y| > 25) and Vac > -68 ➔ Critical_Shift\n② |Offset_X| > 15 or |Offset_Y| > 15 ➔ Mild_Drift\n③ 정상 범위 ➔ Stable"
+      },
+      {
+        "step": 3,
+        "title": "파생 진단 Series 결합",
+        "desc": "평가된 상태 문자열들을 원본 인덱스와 1:1 매핑하여 새로운 판다스 Series로 패킹합니다."
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 람다 삼항연산자 1줄 축약",
+        "code": "df[\"Placement_Force\"].apply(lambda x: \"Over_Pressure\" if x >= 4.0 else (\"Under_Pressure\" if x <= 2.2 else \"Normal\")).head()",
+        "effect": "노즐 장착 압력(N)을 if-else 삼항연산자 람다로 즉시 3단계 범주화",
+        "spotlight_example": {
+          "title": "🔍 단일 컬럼 삼항연산 집중 추적",
+          "target_item": "PCB_00002 (Force = 4.45N) vs PCB_00001 (Force = 2.05N)",
+          "before_snippet": "Placement_Force: 4.45N / 2.05N",
+          "operation_desc": "4.45 >= 4.0 (Over_Pressure) / 2.05 <= 2.2 (Under_Pressure)",
+          "after_snippet": "➡️ Over_Pressure / Under_Pressure",
+          "concept_rule": "수치 센서 구간을 연속된 삼항연산자로 단숨에 엔지니어링 진단 등급으로 치환합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "단일 셀 스칼라 추출",
+            "desc": "Placement_Force 컬럼의 각 행 값을 스칼라 숫자 x로 수신"
+          },
+          {
+            "step": 2,
+            "title": "삼항 연산 평가",
+            "desc": "x >= 4.0 ? Over_Pressure : (x <= 2.2 ? Under_Pressure : Normal)"
+          },
+          {
+            "step": 3,
+            "title": "범주 Series 생성",
+            "desc": "각 행의 인덱스를 유지하며 장착 압력 상태 반환"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. 람다 삼항연산자 1줄 축약\nres = df[\"Placement_Force\"].apply(lambda x: \"Over_Pressure\" if x >= 4.0 else (\"Under_Pressure\" if x <= 2.2 else \"Normal\")).head()\nprint(\"=== [🔥 A. 람다 삼항연산자 1줄 축약] 실행 결과 ===\")\nprint(res)\n"
+      },
+      {
+        "label": "B. 🚀 np.select 초고속 벡터화 (추천!)",
+        "code": "import numpy as np\nconds = [\n    (df[\"Offset_X\"].abs() > 25) | (df[\"Offset_Y\"].abs() > 25),\n    (df[\"Offset_X\"].abs() > 15) | (df[\"Offset_Y\"].abs() > 15)\n]\nchoices = [\"Critical_Shift\", \"Mild_Drift\"]\nres = np.select(conds, choices, default=\"Stable\")\npd.Series(res, index=df.index).head()",
+        "effect": "파이썬 반복문 순회 없이 C-레벨 벡터 연산으로 대용량 설비 로그 초고속 병렬 판정",
+        "spotlight_example": {
+          "title": "🔍 C-엔진 벡터 마스크 동시 평가 추적",
+          "target_item": "전체 5,000건 센서 로그 동시 처리",
+          "before_snippet": "Offset_X, Offset_Y 넘파이 배열",
+          "operation_desc": "불리언 마스크 배열 동시 생성 ➔ 조건에 따라 choices 포인터 직접 매핑",
+          "after_snippet": "➡️ 5,000행 판정 처리 소요시간: 1ms 미만",
+          "concept_rule": "루프 순회 없이 넘파이 SIMD 벡터 명령어를 활용하므로 apply 대비 50~100배 이상의 성능을 자랑합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "불리언 마스크 배열 빌드",
+            "desc": "df['Offset_X'].abs() > 25 등 컬럼 전체의 True/False 비트마스크 배열 사전 생성"
+          },
+          {
+            "step": 2,
+            "title": "C-레벨 순차 조건 바인딩",
+            "desc": "np.select가 conds[0], conds[1]을 순차 체크하여 첫 True 위치에 대응 choices 할당"
+          },
+          {
+            "step": 3,
+            "title": "초고속 넘파이 배열 출력",
+            "desc": "순수 C 배열 버퍼로 즉시 완성 후 판다스 시리즈로 래핑"
+          }
+        ],
+        "full_code": "import pandas as pd\nimport numpy as np\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# B. np.select 초고속 벡터화 (C-레벨 고속 처리)\nconds = [\n    (df[\"Offset_X\"].abs() > 25) | (df[\"Offset_Y\"].abs() > 25),\n    (df[\"Offset_X\"].abs() > 15) | (df[\"Offset_Y\"].abs() > 15)\n]\nchoices = [\"Critical_Shift\", \"Mild_Drift\"]\nres = pd.Series(np.select(conds, choices, default=\"Stable\"), index=df.index)\nprint(\"=== [🔥 B. np.select 초고속 벡터화] 실행 결과 (상위 5건) ===\")\nprint(res.head())\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-fillna-simpleimputer",
+    "category": "2. 결측치 정제 & Imputation",
+    "root_object": "df.fillna()",
+    "method_name": "fillna() vs transform(median) vs SimpleImputer",
+    "compare_group": "결측치 처리 3대 전략",
+    "syntax": "df['col'].fillna(val) | SimpleImputer(strategy='median')",
+    "korean_desc": "센서 통신 불안정으로 유실된 Solder_Volume(솔더 도포량) 및 진공압 결측치를 공정 라인/설비별 중앙값 및 Sklearn 전처리 파이프라인으로 완벽 복구합니다.",
+    "when_to_use": "단순 결측 채우기는 fillna, 설비 및 부품별 특성을 고려한 정밀 보정은 transform(median), 배포 파이프라인 누수 방지는 SimpleImputer 필수.",
+    "pros_cons": "⭐ SimpleImputer는 train 핏팅 통계량을 test 세트에 그대로 적용하여 데이터 누수(Data Leakage)를 원천 차단함.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# 1. 단순 중앙값 대치 (fillna)\ndf_fillna = df.copy()\ndf_fillna[\"Solder_Volume\"] = df_fillna[\"Solder_Volume\"].fillna(df_fillna[\"Solder_Volume\"].median())\n\nprint(\"=== 1. Solder_Volume fillna(median) 처리 후 결측치 수 ===\")\nprint(\"원래 결측 수:\", df[\"Solder_Volume\"].isnull().sum(), \"-> 대치 후 결측 수:\", df_fillna[\"Solder_Volume\"].isnull().sum())\nprint(df_fillna[[\"PCB_ID\", \"Component\", \"Solder_Volume\", \"Defect_Type\"]].head())\n",
+    "spotlight_example": {
+      "title": "🔍 솔더 도포량 결측값(NaN) ➔ 중앙값(100.0) 치환 추적",
+      "target_item": "센서 누락 PCB 로그 (Solder_Volume = NaN)",
+      "before_snippet": "Solder_Volume: NaN (센서 미수신)",
+      "operation_desc": "정상 공정 도포량 중앙값(100.0%) 산출 ➔ NaN 위치에 대치 주입",
+      "after_snippet": "➡️ Solder_Volume = 100.0% 정밀 보정 완료",
+      "concept_rule": "이상치에 취약한 산술평균 대신 중앙값(Median)으로 대치하여 왜곡을 억제합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "결측치(NaN) 비트마스크 탐지",
+        "desc": "Solder_Volume 컬럼의 각 원소가 isnull()인지 여부를 O(1) 비트맵으로 스캔합니다."
+      },
+      {
+        "step": 2,
+        "title": "기준 중앙값 산출",
+        "desc": "유효한 센서 수치들의 median() 값을 1개의 기준 스칼라로 계산합니다."
+      },
+      {
+        "step": 3,
+        "title": "NaN 인덱스 치환 및 복원",
+        "desc": "True였던 결측 위치에 계산된 중앙값을 복사하여 완전한 수치 데이터로 재구성합니다."
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 설비 및 부품별 맞춤 중앙값 대치",
+        "code": "df['Solder_Volume_Imp'] = df.groupby(['Machine', 'Component'])['Solder_Volume'].transform(lambda g: g.fillna(g.median()))\ndf[['Machine', 'Component', 'Solder_Volume', 'Solder_Volume_Imp']].dropna().head()",
+        "effect": "마운터 설비와 부품 규격(0603, BGA 등)별 고유 도포량 특성을 반영한 고정밀 대치",
+        "spotlight_example": {
+          "title": "🔍 그룹별 분할 대치 추적",
+          "target_item": "Mounter_01 + BGA_256 부품 결측치",
+          "before_snippet": "Mounter_01 BGA_256 도포량 NaN",
+          "operation_desc": "Mounter_01 BGA군만의 중앙값으로 타겟팅 대치",
+          "after_snippet": "➡️ 해당 설비 부품군 맞춤형 수치 대치 완료",
+          "concept_rule": "전체 집계가 아닌 세부 공정군별 통계량을 활용하여 도메인 신뢰성을 대폭 향상시킵니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "설비-부품 다차원 그룹핑",
+            "desc": "df.groupby(['Machine', 'Component'])로 20여개 세부 공정 파티션 분할"
+          },
+          {
+            "step": 2,
+            "title": "파티션별 개별 중앙값 연산",
+            "desc": "각 그룹별 도포량 중앙값을 독립 계산"
+          },
+          {
+            "step": 3,
+            "title": "원본 행 크기로 브로드캐스팅",
+            "desc": "transform을 통해 원본 인덱스 위치에 맞춰 결측치만 정밀 치환"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. 설비 및 부품별 맞춤 중앙값 대치\ndf['Solder_Volume_Imp'] = df.groupby(['Machine', 'Component'])['Solder_Volume'].transform(lambda g: g.fillna(g.median()))\nres = df[['Machine', 'Component', 'Solder_Volume', 'Solder_Volume_Imp']].dropna().head()\nprint(\"=== [🔥 A. 설비 및 부품별 맞춤 중앙값 대치] ===\")\nprint(res)\n"
+      },
+      {
+        "label": "B. 🛡️ Sklearn SimpleImputer (파이프라인 누수방지 추천!)",
+        "code": "from sklearn.impute import SimpleImputer\nimputer = SimpleImputer(strategy='median')\nsnd_imputed = imputer.fit_transform(df[['Solder_Volume', 'Vacuum_Pressure']])\npd.DataFrame(snd_imputed, columns=['Solder_Vol_Imp', 'Vac_Imp']).head()",
+        "effect": "머신러닝 전처리 파이프라인 규격에 맞춘 2차원 결측치 표준 대치",
+        "spotlight_example": {
+          "title": "🔍 다변량 센서 컬럼 동시 대치 추적",
+          "target_item": "Solder_Volume 및 Vacuum_Pressure 동시 정제",
+          "before_snippet": "2개 센서 컬럼 결측 존재",
+          "operation_desc": "imputer.fit()으로 컬럼별 중앙값 벡터 학습 ➔ transform()으로 2D 넘파이 배열 반환",
+          "after_snippet": "➡️ 결측 0건의 깨끗한 훈련 피처 행렬 완성",
+          "concept_rule": "fit/transform 분리 구조를 통해 실전 서빙(추론) 단계에 학습 세트 통계량을 일관되게 주입합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "Imputer 객체 초기화",
+            "desc": "strategy='median'으로 중앙값 대치 엔진 인스턴스화"
+          },
+          {
+            "step": 2,
+            "title": "통계량 학습 (Fit)",
+            "desc": "학습 데이터셋의 각 컬럼별 유효 중앙값 벡터 내부 저장"
+          },
+          {
+            "step": 3,
+            "title": "데이터 변환 (Transform)",
+            "desc": "결측 위치에 학습된 벡터값을 주입하여 2D ndarray 생성"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.impute import SimpleImputer\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# B. Sklearn SimpleImputer\nimputer = SimpleImputer(strategy='median')\nsmd_imputed = imputer.fit_transform(df[['Solder_Volume', 'Vacuum_Pressure']])\nres = pd.DataFrame(smd_imputed, columns=['Solder_Vol_Imp', 'Vac_Imp'])\nprint(\"=== [🔥 B. SimpleImputer] 대치 후 수치 행렬 (상위 5건) ===\")\nprint(res.head())\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-indexing-query-loc",
+    "category": "3. 인덱싱 & 필터링",
+    "root_object": "df.loc[ ]",
+    "method_name": "loc[조건, 컬럼] vs query() vs iloc[]",
+    "compare_group": "데이터 슬라이싱 및 필터링 핵심",
+    "syntax": "df.loc[cond, cols] | df.query('cond') | df.iloc[row_idx, col_idx]",
+    "korean_desc": "SMD 공정 로그에서 특정 설비(Mounter_01)와 리플로우 피크 온도(245℃ 이상) 조건을 만족하는 로그만 선택 추출하는 문법을 익힙니다.",
+    "when_to_use": "행/열을 동시에 조건 슬라이싱할 때는 loc, 복잡한 문자열 쿼리 표현식은 query, 순수 정수 위치 기반 추출은 iloc.",
+    "pros_cons": "⭐ loc[cond, cols]는 판다스 표준으로 SettingWithCopyWarning을 예방하며 가장 안전하고 빠름.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# 1. loc 조건 필터링 + 특정 컬럼만 추출 (Mounter_01 설비 & 피크온도 245도 이상 고온 공정)\nres = df.loc[(df[\"Machine\"] == \"Mounter_01\") & (df[\"Reflow_Peak_Temp\"] >= 245.0), [\"PCB_ID\", \"Line\", \"Machine\", \"Component\", \"Reflow_Peak_Temp\", \"Is_Defective\"]]\n\nprint(\"=== 1. df.loc[조건, 컬럼] 실행 결과 (Mounter_01 & 245℃ 이상) ===\")\nprint(res.head())\n",
+    "spotlight_example": {
+      "title": "🔍 설비 및 온도 교차 필터링 대표 추적",
+      "target_item": "Mounter_01 고온 공정 PCB 추출",
+      "before_snippet": "전체 5,000건 공정 설비 로그",
+      "operation_desc": "조건 (Machine == 'Mounter_01' & Reflow_Peak_Temp >= 245.0) 판정 ➔ 일치 행만 통과",
+      "after_snippet": "➡️ [PCB_ID, Line, Machine, Component, Reflow_Peak_Temp, Is_Defective] 추출",
+      "concept_rule": "loc[행조건, 열목록]은 불리언 마스크 필터링과 열 슬라이싱을 1번에 원자적으로 안전하게 수행합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "비트 불리언 마스크 합성",
+        "desc": "(Machine == 'Mounter_01') & (Temp >= 245.0)의 비트 AND 연산으로 True 행 마스크 생성"
+      },
+      {
+        "step": 2,
+        "title": "열 레이블 매핑",
+        "desc": "지정된 6개 컬럼명 리스트를 인덱싱 메타데이터로 참조"
+      },
+      {
+        "step": 3,
+        "title": "서브셋 뷰 슬라이싱",
+        "desc": "조건에 부합하는 레코드만 2차원 데이터프레임으로 즉시 반환"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. query() SQL 스타일 직관 검색",
+        "code": "df.query(\"Machine == 'Mounter_01' and Reflow_Peak_Temp >= 245.0\")[['PCB_ID', 'Component', 'Reflow_Peak_Temp']].head()",
+        "effect": "문자열 기반으로 SQL where 조건절처럼 직관적이고 가독성 높은 필터링",
+        "spotlight_example": {
+          "title": "🔍 query() 파서 실행 추적",
+          "target_item": "가독성 높은 인라인 쿼리",
+          "before_snippet": "Machine == 'Mounter_01' and Reflow_Peak_Temp >= 245.0",
+          "operation_desc": "numexpr 엔진을 이용한 문자열 표현식 고속 파싱",
+          "after_snippet": "➡️ 깔끔한 필터링 결과 반환",
+          "concept_rule": "query()는 따옴표와 괄호 중첩을 최소화하여 데이터 탐색 시 높은 가독성을 제공합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "문자열 구문 분석 (AST)",
+            "desc": "넘파이 기반 numexpr 표현식 트리 빌드"
+          },
+          {
+            "step": 2,
+            "title": "심볼릭 변수 바인딩",
+            "desc": "데이터프레임의 컬럼명을 지역 변수로 매핑하여 조건 연산"
+          },
+          {
+            "step": 3,
+            "title": "결과 행 인덱스 반환",
+            "desc": "조건을 충족하는 레코드만 추출"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. query() SQL 스타일 직관 검색\nres = df.query(\"Machine == 'Mounter_01' and Reflow_Peak_Temp >= 245.0\")[['PCB_ID', 'Component', 'Reflow_Peak_Temp']].head()\nprint(\"=== [🔥 A. query() SQL 스타일 직관 검색] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-cut-vs-qcut",
+    "category": "4. 연속형 구간화 (Binning)",
+    "root_object": "pd.",
+    "method_name": "pd.cut() vs pd.qcut()",
+    "compare_group": "연속 수치 센서의 이산 범주화 기법",
+    "syntax": "pd.cut(s, bins, labels) | pd.qcut(s, q, labels)",
+    "korean_desc": "연속형 센서 데이터인 Tact_Time(공정 소요시간)을 절대 물리 경계값 기준(cut)과 균등 표본 4분위수 기준(qcut)으로 범주화하여 공정 지연 등급을 설계합니다.",
+    "when_to_use": "설계 규격 스펙(Spec-in/out) 기준 절대 분할은 pd.cut, 데이터 밀도에 따른 동일 비율 분위수 분할은 pd.qcut.",
+    "pros_cons": "⭐ cut은 도메인 허용 스펙을 명확히 반영하고, qcut은 각 등급별 데이터 개수를 균일하게 유지함.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\ntact = df[\"Tact_Time\"]\n\n# 1. pd.cut (절대 공정 타임 경계값 기준: 초 단위)\ncut_res = pd.cut(tact, bins=[0, 3.8, 4.2, 4.6, 10.0], labels=[\"Fast\", \"Standard\", \"Caution\", \"Lagging\"])\n\n# 2. pd.qcut (4분위수 균등 개수 기준: 25%씩)\nqcut_res = pd.qcut(tact, q=4, labels=[\"Q1(고속)\", \"Q2(보통)\", \"Q3(주의)\", \"Q4(지연)\"])\n\nprint(\"=== 1. pd.cut 공정 타임 구간별 데이터 개수 ===\")\nprint(cut_res.value_counts())\nprint(\"\\n=== 2. pd.qcut 4분위수별 균등 데이터 개수 ===\")\nprint(qcut_res.value_counts())\n",
+    "spotlight_example": {
+      "title": "🔍 연속 소요시간(초) ➔ 이산 등급 구간화 추적",
+      "target_item": "PCB_00001 (Tact_Time = 4.21초)",
+      "before_snippet": "Tact_Time: 4.21초",
+      "operation_desc": "(4.2, 4.6] 구간 매칭 ➔ Caution 판정 / qcut 기준 분위수 판정",
+      "after_snippet": "➡️ cut 결과: Caution, qcut 결과: Q3(주의)",
+      "concept_rule": "cut은 고정 경계(bins)로, qcut은 누적 백분위 기준 균등 표본 개수 분할로 이산화합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "연속형 센서 배열 스캔",
+        "desc": "Tact_Time 컬럼의 최소값(min)과 최대값(max) 및 데이터 분포 파악"
+      },
+      {
+        "step": 2,
+        "title": "경계 분할 및 인터벌 매핑",
+        "desc": "cut은 지정된 bins 배열로, qcut은 np.percentile로 4분위 경계선 자동 결정"
+      },
+      {
+        "step": 3,
+        "title": "범주형 라벨 태깅",
+        "desc": "각 행이 속한 인터벌에 해당하는 labels 문자열을 매핑하여 Categorical Series 생성"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. pd.qcut으로 장착 압력 5분위수 정밀 분할",
+        "code": "pd.qcut(df['Placement_Force'], q=5, labels=['P1_VeryLow', 'P2_Low', 'P3_Normal', 'P4_High', 'P5_VeryHigh']).value_counts()",
+        "effect": "Placement_Force(장착 압력)를 정확히 20%씩 5개 균등 구간으로 분할하여 통계적 편향 해소",
+        "spotlight_example": {
+          "title": "🔍 5분위수 균등 표본 분할 추적",
+          "target_item": "전체 5,000건 노즐 압력 데이터",
+          "before_snippet": "연속 수치 1.5N ~ 5.5N",
+          "operation_desc": "상위 20%, 40%, 60%, 80% 지점 계산 후 5등분",
+          "after_snippet": "➡️ 각 구간당 정확히 1,000건씩 배분",
+          "concept_rule": "표본 수가 적거나 왜곡된 데이터에서도 모든 카테고리에 동일한 샘플 수가 보장됩니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "분위수 경계 연산",
+            "desc": "0.2, 0.4, 0.6, 0.8 분위수를 계산하여 5개 인터벌 정의"
+          },
+          {
+            "step": 2,
+            "title": "인덱스별 구간 매칭",
+            "desc": "각 장착 압력 수치가 속한 분위수 파악"
+          },
+          {
+            "step": 3,
+            "title": "5등급 라벨 할당",
+            "desc": "P1부터 P5까지 균일한 범주형 분포 산출"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. pd.qcut으로 장착 압력 5분위수 정밀 분할\nres = pd.qcut(df['Placement_Force'], q=5, labels=['P1_VeryLow', 'P2_Low', 'P3_Normal', 'P4_High', 'P5_VeryHigh']).value_counts().rename('Count')\nprint(\"=== [🔥 A. pd.qcut 5분위수 분할 빈도] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-groupby-agg-pivot",
+    "category": "5. 그룹 집계 & 피벗 매트릭스",
+    "root_object": "df.groupby()",
+    "method_name": "groupby().agg() vs .transform() vs pivot_table()",
+    "compare_group": "그룹 요약 및 피벗 집계 3대 문법",
+    "syntax": "df.groupby('grp').agg(..) | df.groupby('grp').transform() | df.pivot_table()",
+    "korean_desc": "SMD 공정 설비(Machine) 및 부품(Component)별 마운트 오차 평균, 솔더 도포량 최대치, 불량 발생률을 다차원으로 집계하고 피벗 테이블을 구성합니다.",
+    "when_to_use": "다차원 요약 리포트는 groupby().agg(), 집계 수치를 원본 행에 1:1 결합(피처 생성)할 때는 transform, 행/열 교차 분석표는 pivot_table.",
+    "pros_cons": "⭐ agg()는 다중 컬럼에 서로 다른 집계 함수를 직관적으로 부여 가능. transform은 인덱스를 유지하여 브로드캐스팅 파생변수 생성에 필수.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# 1. groupby().agg() (설비별 다중 센서 통계량 및 불량률 집계)\nsummary = df.groupby(\"Machine\").agg(\n    avg_offset_x=(\"Offset_X\", lambda x: x.abs().mean()),\n    avg_offset_y=(\"Offset_Y\", lambda x: x.abs().mean()),\n    max_peak_temp=(\"Reflow_Peak_Temp\", \"max\"),\n    defect_rate=(\"Is_Defective\", \"mean\")\n).round(3)\n\nprint(\"=== 1. Machine 설비별 핵심 공정 요약표 (agg) ===\")\nprint(summary)\n",
+    "spotlight_example": {
+      "title": "🔍 설비별 다중 센서 종합 집계 추적",
+      "target_item": "Mounter_01 ~ Mounter_04 그룹 집계",
+      "before_snippet": "5,000행의 개별 설비 센서 로그",
+      "operation_desc": "Machine별 그룹핑 ➔ X/Y 절댓값 평균, 최고온도, 불량률 동시 연산",
+      "after_snippet": "➡️ 4개 설비 행으로 압축된 요약 리포트 매트릭스 생성",
+      "concept_rule": "named aggregation 구문(새컬럼명=(원본컬럼, 함수))을 통해 명확하고 가독성 높은 요약표를 즉시 구성합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "그룹 파티션 분할 (Split)",
+        "desc": "Machine 키를 해시 매핑하여 4개 설비 버킷으로 데이터 분할"
+      },
+      {
+        "step": 2,
+        "title": "통계 함수 적용 (Apply)",
+        "desc": "각 버킷별로 abs().mean(), max(), mean() 함수 병렬 연산"
+      },
+      {
+        "step": 3,
+        "title": "테이블 병합 (Combine)",
+        "desc": "연산된 통계량을 취합하여 4행 데이터프레임으로 재결합"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. ⚡ transform (행 수 유지 브로드캐스팅)",
+        "code": "df['Machine_Mean_Force'] = df.groupby('Machine')['Placement_Force'].transform('mean')\ndf[['Machine', 'Placement_Force', 'Machine_Mean_Force']].head()",
+        "effect": "설비별 평균 압력을 계산하여 원본 5,000행 크기 그대로 1:1 매핑 (상대 편차 파생변수 생성)",
+        "spotlight_example": {
+          "title": "🔍 transform 브로드캐스팅 추적",
+          "target_item": "PCB_00001 (Mounter_03 소속)",
+          "before_snippet": "개별 압력: 2.05N",
+          "operation_desc": "Mounter_03의 전체 평균(3.2N) 계산 후 원본 행에 그대로 채움",
+          "after_snippet": "➡️ Machine_Mean_Force = 3.20N 파생 컬럼 생성",
+          "concept_rule": "transform은 원본 행 개수를 절대 줄이지 않고 그룹 연산 결과를 원본 인덱스에 그대로 투영합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "그룹별 통계 계산",
+            "desc": "Machine별 장착 압력 평균값 계산"
+          },
+          {
+            "step": 2,
+            "title": "인덱스 정렬 유지",
+            "desc": "원본 행의 Machine 소속을 확인하여 해당 평균값 조회"
+          },
+          {
+            "step": 3,
+            "title": "원본 크기 시리즈 반환",
+            "desc": "5,000행 길이의 브로드캐스팅 파생변수 완성"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. transform (행 수 유지 브로드캐스팅)\ndf['Machine_Mean_Force'] = df.groupby('Machine')['Placement_Force'].transform('mean')\nres = df[['Machine', 'Placement_Force', 'Machine_Mean_Force']].head()\nprint(\"=== [🔥 A. transform 브로드캐스팅 결과] ===\")\nprint(res)\n"
+      },
+      {
+        "label": "B. pivot_table 2차원 교차 요약",
+        "code": "df.pivot_table(index='Machine', columns='Component', values='Is_Defective', aggfunc='mean').round(4)",
+        "effect": "설비(행) x 부품 규격(열)의 2차원 불량률 교차 매트릭스 도출",
+        "spotlight_example": {
+          "title": "🔍 2차원 불량률 교차 피벗 추적",
+          "target_item": "설비 x 부품 2차원 분석",
+          "before_snippet": "Machine(4종) x Component(5종)",
+          "operation_desc": "4x5 격자 매트릭스 셀에 불량률 평균(mean) 교차 배치",
+          "after_snippet": "➡️ 취약 설비-부품 조합을 한눈에 식별하는 히트맵 기반표 완성",
+          "concept_rule": "pivot_table은 행과 열 2차원 축을 동시에 지정하여 공정 간 상호작용 이상을 탐지합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "2차원 축 설정",
+            "desc": "index='Machine', columns='Component'로 행/열 좌표 정의"
+          },
+          {
+            "step": 2,
+            "title": "셀 집계 연산",
+            "desc": "각 교차 셀에 속하는 Is_Defective 값들의 mean() 산출"
+          },
+          {
+            "step": 3,
+            "title": "2D 피벗 매트릭스 렌더링",
+            "desc": "누락 셀은 NaN/0 처리하여 4x5 분석표 구성"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# B. pivot_table 2차원 교차 요약\nres = df.pivot_table(index='Machine', columns='Component', values='Is_Defective', aggfunc='mean').round(4)\nprint(\"=== [🔥 B. pivot_table 설비x부품 불량률 매트릭스] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-melt-vs-pivot-play",
+    "category": "6. 테이블 구조 변환 (Reshape)",
+    "root_object": "pd.",
+    "method_name": "pd.melt() (Wide ➔ Long) vs .pivot()",
+    "compare_group": "데이터 재구조화 (Tidy Data) 필수 문법",
+    "syntax": "pd.melt(df, id_vars, value_vars) | df.pivot(index, columns, values)",
+    "korean_desc": "여러 개 센서 측정 컬럼(Offset_X, Offset_Y, Solder_Height)으로 넓게 펼쳐진 Wide 테이블을 분석/시각화에 최적화된 Tidy Long 포맷으로 언피벗(melt)합니다.",
+    "when_to_use": "다변량 센서 데이터를 차트 라이브러리(seaborn/facet)에 바인딩하거나 통합 통계를 낼 때 melt 필수, 반대로 시계열 전개 시 pivot 사용.",
+    "pros_cons": "⭐ melt는 복수 센서 컬럼을 [센서종류, 센서측정값] 2개 열로 단숨에 압축하여 데이터 파이프라인 표준 형식을 만듦.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\nsample = df[[\"PCB_ID\", \"Machine\", \"Offset_X\", \"Offset_Y\", \"Solder_Height\"]].head(5)\n\n# 1. melt로 센서 컬럼들을 세로형(Long 포맷)으로 언피벗\nres = pd.melt(sample, id_vars=[\"PCB_ID\", \"Machine\"], value_vars=[\"Offset_X\", \"Offset_Y\", \"Solder_Height\"], var_name=\"Sensor_Type\", value_name=\"Measurement\")\n\nprint(\"=== 1. pd.melt() 센서 데이터 언피벗 결과 (15행 변환) ===\")\nprint(res)\n",
+    "spotlight_example": {
+      "title": "🔍 Wide 가로형 센서 ➔ Long 세로형 구조 변환 추적",
+      "target_item": "PCB_00001 (Offset_X: 13.49, Offset_Y: 9.66, Height: 146.71)",
+      "before_snippet": "가로로 1행에 나열된 3개 센서 컬럼",
+      "operation_desc": "id_vars(PCB_ID, Machine)를 축으로 각 센서명을 세로 3행으로 펼침",
+      "after_snippet": "➡️ 1행 ➔ 3행 (Sensor_Type: Offset_X, Offset_Y, Solder_Height)",
+      "concept_rule": "컬럼으로 흩어진 측정 항목을 하나의 범주형 축(Sensor_Type)과 단일 수치 열(Measurement)로 정돈합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "고정 축 식별자 지정",
+        "desc": "id_vars로 지정된 PCB_ID, Machine은 원형 그대로 복제 행을 유지"
+      },
+      {
+        "step": 2,
+        "title": "측정 열 스택 언피벗",
+        "desc": "value_vars의 컬럼명들을 var_name의 문자열 데이터로 전치"
+      },
+      {
+        "step": 3,
+        "title": "수치값 매핑",
+        "desc": "각 측정 수치를 value_name 열에 1:1로 매핑하여 롱 포맷 레코드 완성"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 다시 Wide 포맷으로 복원 (pivot)",
+        "code": "res.pivot(index='PCB_ID', columns='Sensor_Type', values='Measurement')",
+        "effect": "세로로 길게 풀린 Long 테이블을 다시 PCB_ID 행 기준 가로 센서 컬럼으로 원상 복원",
+        "spotlight_example": {
+          "title": "🔍 pivot() 가로형 테이블 복원 추적",
+          "target_item": "15행 Long 포맷 테이블",
+          "before_snippet": "Sensor_Type별로 쪼개진 행",
+          "operation_desc": "Sensor_Type의 고유값(3개)을 새로운 가로 컬럼 헤더로 올림",
+          "after_snippet": "➡️ 원래의 5행 3컬럼 가로 Wide 형태로 복원",
+          "concept_rule": "pivot은 melt의 정확한 역연산으로, 인덱스와 열 헤더의 교차 좌표에 값을 재배치합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "행/열 고유키 식별",
+            "desc": "index='PCB_ID', columns='Sensor_Type'의 고유 조합 매트릭스 확보"
+          },
+          {
+            "step": 2,
+            "title": "데이터 슬라이싱 및 격자 채우기",
+            "desc": "각 셀 위치에 Measurement 값을 삽입"
+          },
+          {
+            "step": 3,
+            "title": "2D 와이드 프레임 완성",
+            "desc": "원형의 가로형 데이터프레임 구조로 복귀"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\nsample = df[[\"PCB_ID\", \"Machine\", \"Offset_X\", \"Offset_Y\", \"Solder_Height\"]].head(5)\nmelted = pd.melt(sample, id_vars=[\"PCB_ID\", \"Machine\"], value_vars=[\"Offset_X\", \"Offset_Y\", \"Solder_Height\"], var_name=\"Sensor_Type\", value_name=\"Measurement\")\n\n# A. 다시 Wide 포맷으로 복원 (pivot)\nres = melted.pivot(index='PCB_ID', columns='Sensor_Type', values='Measurement')\nprint(\"=== [🔥 A. pivot() 와이드 포맷 복원] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-str-regex-play",
+    "category": "7. 문자열 & 정규표현식 (.str)",
+    "root_object": "df['col'].str.",
+    "method_name": ".str.extract() vs .str.contains() vs .str.split()",
+    "compare_group": "텍스트 정제 및 정규표현식 파싱",
+    "syntax": "s.str.extract(r'regex') | s.str.contains(r'pat') | s.str.split(pat)",
+    "korean_desc": "Lot_ID('LOT_20260301') 및 Component 부품명('IC_QFP_48', 'CHIP_0603')에서 정규표현식을 활용해 제조일자 및 부품 패키지 규격을 자동 추출합니다.",
+    "when_to_use": "특정 패턴 문자열 분리/추출은 str.extract, 키워드 검색/필터링 마스크는 str.contains, 구분자 분할은 str.split.",
+    "pros_cons": "⭐ 정규표현식 캡처 그룹 ( )을 사용하면 비정형 코드에서 생산 일자, 장비 번호, 부품 크기 수치를 원샷으로 추출 가능.",
+    "default_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# 1. Lot_ID에서 생산일자(YYYYMMDD) 8자리 숫자 정규식 추출\ndf[\"Prod_Date\"] = df[\"Lot_ID\"].str.extract(r\"LOT_([0-9]{8})\")[0]\n\n# 2. Component에서 부품 타입(CHIP, IC, BGA) 추출\ndf[\"Pkg_Family\"] = df[\"Component\"].str.extract(r\"([A-Z]+)_?\")[0]\n\nprint(\"=== 1. Lot_ID 생산일자 및 Component 패키지 계열 정규식 추출 결과 ===\")\nprint(df[[\"PCB_ID\", \"Lot_ID\", \"Prod_Date\", \"Component\", \"Pkg_Family\"]].head())\n",
+    "spotlight_example": {
+      "title": "🔍 부품 코드 및 로트번호 정규식 캡처 추적",
+      "target_item": "PCB_00001 (Lot_ID: LOT_20260301, Comp: CAP_3216)",
+      "before_snippet": "비정형 문자열: 'LOT_20260301', 'CAP_3216'",
+      "operation_desc": "정규식 LOT_([0-9]{8}) 매칭 ➔ 캡처 그룹 20260301 추출",
+      "after_snippet": "➡️ Prod_Date: '20260301', Pkg_Family: 'CAP'",
+      "concept_rule": "str.extract는 정규표현식 괄호 () 안의 타겟 부분만 골라내어 깔끔한 새로운 컬럼으로 생성합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "정규식 엔진 컴파일",
+        "desc": "LOT_([0-9]{8}) 정규표현식 패턴 바인딩"
+      },
+      {
+        "step": 2,
+        "title": "문자열 패턴 매칭",
+        "desc": "각 행의 Lot_ID 텍스트를 스캔하여 캡처 그룹 추출"
+      },
+      {
+        "step": 3,
+        "title": "구조화된 컬럼 반환",
+        "desc": "추출된 순수 텍스트를 인덱스를 유지한 판다스 Series로 변환"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. str.contains() 키워드 포함 불리언 마스크",
+        "code": "df[df['Defect_Type'].str.contains('Solder|Shift', na=False)][['PCB_ID', 'Defect_Type', 'Offset_X', 'Solder_Height']].head()",
+        "effect": "납땜(Solder) 또는 위치이탈(Shift) 관련 불량만 정규식 OR(|) 조건으로 고속 필터링",
+        "spotlight_example": {
+          "title": "🔍 정규식 OR 패턴 검색 추적",
+          "target_item": "Defect_Type에 'Solder' 또는 'Shift' 포함 레코드",
+          "before_snippet": "Defect_Type 텍스트 컬럼",
+          "operation_desc": "패턴 'Solder|Shift' 정규식 평가 ➔ True인 행만 마스킹",
+          "after_snippet": "➡️ 납땜 및 장착 오차 관련 불량 데이터만 정밀 추출",
+          "concept_rule": "str.contains(r'A|B')는 단일 컬럼에 복수 키워드가 포함되어 있는지 간결하게 검사합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "정규식 패턴 바인딩",
+            "desc": "'Solder|Shift' 복합 패턴 등록"
+          },
+          {
+            "step": 2,
+            "title": "텍스트 포함 여부 검사",
+            "desc": "문자열 내 패턴 일치 시 True, 미일치 시 False 반환"
+          },
+          {
+            "step": 3,
+            "title": "불리언 마스크 필터링",
+            "desc": "True에 해당하는 행만 슬라이싱하여 반환"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. str.contains() 키워드 포함 불리언 마스크\nres = df[df['Defect_Type'].str.contains('Solder|Shift', na=False)][['PCB_ID', 'Defect_Type', 'Offset_X', 'Solder_Height']].head()\nprint(\"=== [🔥 A. str.contains() 키워드 필터링 결과] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "pd-dummies-vs-scaler",
+    "category": "8. 머신러닝 인코딩 & 스케일링",
+    "root_object": "pd.get_dummies() | RobustScaler()",
+    "method_name": "get_dummies(drop_first) vs RobustScaler vs StandardScaler",
+    "compare_group": "범주형 원핫인코딩 및 수치 정규화 앙상블",
+    "syntax": "pd.get_dummies(df, drop_first=True) | RobustScaler().fit_transform(X)",
+    "korean_desc": "SMD 공정 설비 범주형 변수(Line, Component)를 가변수 다중공선성 없이 인코딩하고, 극단적 오차 이상치에 강건한 RobustScaler로 정규화합니다.",
+    "when_to_use": "선형 모델/회귀 분석 시 더미 다중공선성 제거는 drop_first=True 필수, 이상치가 튀는 센서 데이터 스케일링은 RobustScaler 강력 추천.",
+    "pros_cons": "⭐ StandardScaler는 이상치(Outlier)에 평균과 분산이 심하게 끌려가지만, RobustScaler는 IQR(사분위범위) 기준이라 매우 안정적.",
+    "default_code": "import pandas as pd\nfrom sklearn.preprocessing import RobustScaler\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna(subset=[\"Offset_X\", \"Offset_Y\", \"Placement_Force\"])\n\n# 1. RobustScaler로 이상치에 강건한 센서 수치 정규화 (중앙값 및 IQR 기준)\nscaler = RobustScaler()\nscaled_vals = scaler.fit_transform(df[[\"Offset_X\", \"Offset_Y\", \"Placement_Force\"]])\nres = pd.DataFrame(scaled_vals, columns=[\"Offset_X_rob\", \"Offset_Y_rob\", \"Force_rob\"])\n\nprint(\"=== 1. RobustScaler 변환 수치 (상위 5건, 중앙값=0 기준 정렬) ===\")\nprint(res.head())\n",
+    "spotlight_example": {
+      "title": "🔍 극단 오차 센서값의 IQR 강건 스케일링 추적",
+      "target_item": "PCB_00003 (Offset_X = -28.51um, 큰 편차)",
+      "before_snippet": "Offset_X: -28.51 (단위: um)",
+      "operation_desc": "(x - median) / IQR 연산 ➔ 중앙값(0.0)을 중심으로 표준화",
+      "after_snippet": "➡️ Offset_X_rob = -1.68 (이상치 영향 억제된 안정적 수치)",
+      "concept_rule": "RobustScaler는 (x - Q2) / (Q3 - Q1) 공식을 사용하여 센서 튀는 값에 모델이 왜곡되는 현상을 방지합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "중앙값(Q2) 및 사분위범위(IQR) 계산",
+        "desc": "각 센서 피처별 25% 분위수(Q1), 50%(Q2), 75%(Q3) 도출 및 IQR=Q3-Q1 연산"
+      },
+      {
+        "step": 2,
+        "title": "중앙값 중심화 (Centering)",
+        "desc": "모든 측정값에서 Q2를 빼서 중앙값을 0.0으로 정렬"
+      },
+      {
+        "step": 3,
+        "title": "IQR 스케일 조정 (Scaling)",
+        "desc": "IQR로 나누어 이상치가 존재해도 스케일이 비정상적으로 찌그러지지 않게 변환"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 🛡️ pd.get_dummies(drop_first=True: 추천!)",
+        "code": "pd.get_dummies(df[['Line', 'Component']], drop_first=True, dtype=int).head()",
+        "effect": "기준 범주를 1개 제외하여 가변수 함정(Dummy Variable Trap: 완전 다중공선성)을 원천 예방",
+        "spotlight_example": {
+          "title": "🔍 원핫 가변수 1개 축약 추적",
+          "target_item": "Line 컬럼 (3개 범주: Line_A, Line_B, Line_C)",
+          "before_snippet": "범주 3개 ➔ 통상 3개 열 생성",
+          "operation_desc": "첫 번째 범주(Line_A)를 베이스라인으로 제외 ➔ 2개 컬럼(Line_B, Line_C)만 생성",
+          "after_snippet": "➡️ [Line_SMD_Line_B: 0, Line_SMD_Line_C: 0]이면 자동으로 Line_A를 의미",
+          "concept_rule": "N개 범주를 N-1개 열로 표현하여 선형 회귀 시 행렬 역행렬 계산 오류(완전 상관)를 완벽 차단합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "범주 고유값 탐색",
+            "desc": "Line 고유값 [Line_A, Line_B, Line_C] 식별"
+          },
+          {
+            "step": 2,
+            "title": "첫 번째 레퍼런스 범주 제거",
+            "desc": "Line_A 컬럼을 탈락시키고 B, C 컬럼만 생성 준비"
+          },
+          {
+            "step": 3,
+            "title": "0/1 바이너리 매트릭스 변환",
+            "desc": "일치하는 열에 1, 나머지 0 부여"
+          }
+        ],
+        "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. pd.get_dummies(drop_first=True)\nres = pd.get_dummies(df[['Line', 'Component']], drop_first=True, dtype=int).head()\nprint(\"=== [🔥 A. get_dummies(drop_first=True) 가변수 행렬] ===\")\nprint(res)\n"
+      },
+      {
+        "label": "B. StandardScaler (평균 0, 표준편차 1)",
+        "code": "from sklearn.preprocessing import StandardScaler\nres = pd.DataFrame(StandardScaler().fit_transform(df[['Offset_X', 'Offset_Y']]), columns=['X_std', 'Y_std'])\nres.head()",
+        "effect": "가장 전통적인 표준 정규분포(Z-score) 변환 (정규분포를 따르는 센서 데이터에 최적)",
+        "spotlight_example": {
+          "title": "🔍 평균 0, 표준편차 1 변환 추적",
+          "target_item": "정규분포 기반 센서 스케일링",
+          "before_snippet": "평균 0um, 표준편차 12.5um",
+          "operation_desc": "(x - mean) / std 연산",
+          "after_snippet": "➡️ 평균 0.0, 분산 1.0으로 스케일 통일",
+          "concept_rule": "경사하강법 및 서포트벡터머신 등 거리 기반 알고리즘의 학습 수렴 속도를 극대화합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "평균 및 표준편차 산출",
+            "desc": "컬럼별 산술평균(mean)과 표준편차(std) 학습"
+          },
+          {
+            "step": 2,
+            "title": "Z-Score 표준화",
+            "desc": "(x - mean) / std 수식 적용"
+          },
+          {
+            "step": 3,
+            "title": "2D 배열 출력",
+            "desc": "변환된 피처 행렬 완성"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.preprocessing import StandardScaler\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna(subset=[\"Offset_X\", \"Offset_Y\"])\n\n# B. StandardScaler (평균 0, 표준편차 1)\nscaler = StandardScaler()\nres = pd.DataFrame(scaler.fit_transform(df[[\"Offset_X\", \"Offset_Y\"]]), columns=[\"X_std\", \"Y_std\"])\nprint(\"=== [🔥 B. StandardScaler] 표준 정규화 수치 (상위 5건) ===\")\nprint(res.head())\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-ols-vif-regression",
+    "category": "9. 회귀 분석 & 다중공선성 (VIF)",
+    "root_object": "statsmodels.",
+    "method_name": "OLS(formula) vs VIF(분산팽창지수)",
+    "compare_group": "선형 회귀 인과관계 해석 및 공선성 진단",
+    "syntax": "ols('y ~ x1 + x2', data).fit() | variance_inflation_factor(X.values, i)",
+    "korean_desc": "SMD 공정 소요시간(Tact_Time)에 장착 압력, 오차 크기, 리플로우 온도가 미치는 영향을 OLS 다중선형회귀로 분석하고 VIF로 다중공선성을 검증합니다.",
+    "when_to_use": "각 공정 변수의 통계적 유의성(p-value)과 영향도 계수 해석은 OLS, 독립변수 간 중복 상관관계 진단은 VIF.",
+    "pros_cons": "⭐ VIF가 10을 초과하면 두 센서가 사실상 동일한 물리량을 중복 측정하고 있다는 뜻이므로 특성을 축약하거나 제거해야 함.",
+    "default_code": "import pandas as pd\nfrom statsmodels.formula.api import ols\nfrom statsmodels.stats.outliers_influence import variance_inflation_factor\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna(subset=[\"Tact_Time\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Machine\"])\n\n# 1. OLS 선형 회귀 적합 (종속변수: Tact_Time, 독립변수: 장착압력, 피크온도, 설비범주)\nmodel = ols(\"Tact_Time ~ Placement_Force + Reflow_Peak_Temp + C(Machine)\", data=df).fit()\n\n# 2. VIF 진단 (독립변수들 간 다중공선성)\nX = pd.get_dummies(df[[\"Placement_Force\", \"Reflow_Peak_Temp\", \"Machine\"]], drop_first=True, dtype=float)\nX[\"const\"] = 1.0\nvif_data = pd.DataFrame({\n    \"Feature\": X.columns,\n    \"VIF\": [variance_inflation_factor(X.values, i).round(2) for i in range(len(X.columns))]\n})\n\nprint(\"=== 1. OLS 회귀계수 요약 (p-value < 0.05 검토) ===\")\nprint(model.params.round(4))\nprint(\"\\n=== 2. VIF 다중공선성 진단 (10 이상 위험) ===\")\nprint(vif_data)\n",
+    "spotlight_example": {
+      "title": "🔍 다중공선성(VIF) 지수 및 회귀 영향도 추적",
+      "target_item": "Placement_Force 계수 (소요시간 영향) & VIF 값",
+      "before_snippet": "독립변수 3종 (Force, Temp, Machine)",
+      "operation_desc": "OLS 적합으로 회귀계수 산출 및 R-squared/VIF 동시 계산",
+      "after_snippet": "➡️ 모든 센서 VIF < 5.0 (다중공선성 없이 건전한 독립성 확인)",
+      "concept_rule": "VIF = 1 / (1 - R_i^2). 다른 설명변수들로 해당 변수를 설명할 수 없을수록 VIF가 1에 수렴하여 이상적입니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "포뮬러 파싱 및 설계행렬 구성",
+        "desc": "'Tact_Time ~ Force + Temp + C(Machine)' 공식으로 범주 자동 더미화 및 절편 추가"
+      },
+      {
+        "step": 2,
+        "title": "최소자승법 (OLS) 파라미터 추정",
+        "desc": "잔차 제곱합을 최소화하는 베타 계수 및 표준오차, t-통계량 계산"
+      },
+      {
+        "step": 3,
+        "title": "보조 회귀를 통한 VIF 연산",
+        "desc": "각 독립변수를 종속변수로 둔 회귀식의 R^2로 VIF 산출"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. ANOVA 분산분석표 출력 (anova_lm)",
+        "code": "from statsmodels.stats.anova import anova_lm\nanova_lm(model, typ=2).round(4)",
+        "effect": "각 독립변수가 Tact_Time 변동성에 기여하는 F-통계량과 순수 제곱합(Sum of Squares) 분해",
+        "spotlight_example": {
+          "title": "🔍 ANOVA 분산분석표 검정 추적",
+          "target_item": "설비(Machine) 및 압력(Force)의 주효과",
+          "before_snippet": "OLS 회귀 모델",
+          "operation_desc": "Type 2 분산분석표 생성 ➔ F-검정 수행",
+          "after_snippet": "➡️ 각 요인의 통계적 유의차(PR(>F)) 정량 확인",
+          "concept_rule": "개별 계수가 아닌 범주형 변수 전체(Machine_01~04)의 유의성을 한 번의 가설검정으로 판정합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "잔차 제곱합 분해",
+            "desc": "요인별 설명 변동량(SS) 및 잔차 변동량 분리"
+          },
+          {
+            "step": 2,
+            "title": "자유도(DF) 기준 평균 제곱(MS) 연산",
+            "desc": "MS = SS / DF 계산"
+          },
+          {
+            "step": 3,
+            "title": "F-검정 통계량 출력",
+            "desc": "F-value와 p-value로 요인 영향 판정"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom statsmodels.formula.api import ols\nfrom statsmodels.stats.anova import anova_lm\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna(subset=[\"Tact_Time\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Machine\"])\n\n# A. ANOVA 분산분석표 출력 (anova_lm)\nmodel = ols(\"Tact_Time ~ Placement_Force + Reflow_Peak_Temp + C(Machine)\", data=df).fit()\nres = anova_lm(model, typ=2).round(4)\nprint(\"=== [🔥 A. ANOVA 분산분석표 (anova_lm)] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-lasso-vs-ridge-weights",
+    "category": "10. 머신러닝 규제 & 특성 선택",
+    "root_object": "sklearn.linear_model.",
+    "method_name": "Lasso(L1: 계수 0 수축) vs Ridge(L2: 다중공선성 완화)",
+    "compare_group": "선형 모델 규제 (Regularization) 2대장",
+    "syntax": "Lasso(alpha=0.1) | Ridge(alpha=10.0) | ElasticNet()",
+    "korean_desc": "수십 개의 설비 센서 피처 중 불량 발생에 영향을 주지 않는 무의미한 센서를 0으로 제거하는 Lasso(L1)와 가중치를 안정화하는 Ridge(L2)를 비교합니다.",
+    "when_to_use": "불필요한 센서 피처 자동 선택/제거는 Lasso, 상관관계가 높은 다변량 센서 가중치 안정화는 Ridge.",
+    "pros_cons": "⭐ Lasso는 덜 중요한 계수를 정확히 0으로 수축(Sparsity)시켜 모델 경량화에 탁월함.",
+    "default_code": "import pandas as pd\nfrom sklearn.linear_model import Lasso, Ridge, LinearRegression\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = pd.get_dummies(df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Line\"]], drop_first=True, dtype=int)\ny = df[\"Is_Defective\"]\n\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)\n\nlr = LinearRegression().fit(X_scaled, y)\nlasso = Lasso(alpha=0.01, random_state=42).fit(X_scaled, y)\nridge = Ridge(alpha=10.0, random_state=42).fit(X_scaled, y)\n\ncomp = pd.DataFrame({\n    \"Original_OLS\": lr.coef_.round(4),\n    \"Lasso (L1: 0 수축)\": lasso.coef_.round(4),\n    \"Ridge (L2: 완만 감소)\": ridge.coef_.round(4)\n}, index=X.columns)\n\nprint(\"=== Lasso vs Ridge 회귀계수(Weights) 비교 ===\")\nprint(comp)\n",
+    "spotlight_example": {
+      "title": "🔍 L1 규제에 의한 무의미 센서 계수 0 축약 추적",
+      "target_item": "Lasso 적용 시 계수 변화 (Line 및 Offset 계수 비교)",
+      "before_snippet": "Original_OLS 계수: 모든 피처가 0이 아닌 수치 보유",
+      "operation_desc": "Lasso alpha=0.01 페널티 부과 ➔ 중요도 낮은 피처 계수 0.0000으로 강제 수축",
+      "after_snippet": "➡️ 핵심 원인 센서만 살아남아 특성 선택(Feature Selection) 자동 완료",
+      "concept_rule": "L1 norm 다이아몬드 제약면은 축과의 교점이 모서리(0)에서 발생하므로 불필요한 가중치를 완벽히 소거합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "피처 표준화",
+        "desc": "모든 센서 컬럼을 StandardScaler로 정규화하여 공평한 페널티 부과 환경 조성"
+      },
+      {
+        "step": 2,
+        "title": "규제 손실함수 최적화",
+        "desc": "MSE + alpha * sum(|beta|) (Lasso) vs MSE + alpha * sum(beta^2) (Ridge)"
+      },
+      {
+        "step": 3,
+        "title": "희소 계수 매트릭스 도출",
+        "desc": "Lasso의 경우 불필요 계수가 정확히 0으로 절삭된 최종 가중치 벡터 출력"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. ElasticNet (L1 + L2 하이브리드 결합)",
+        "code": "from sklearn.linear_model import ElasticNet\nenet = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42).fit(X_scaled, y)\npd.Series(enet.coef_.round(4), index=X.columns, name='ElasticNet_Coef')",
+        "effect": "L1의 피처 선택 능력과 L2의 그룹 상관관계 보존 능력을 결합하여 다중 상관 센서군 동시 선택",
+        "spotlight_example": {
+          "title": "🔍 L1/L2 하이브리드 가중치 수렴 추적",
+          "target_item": "상관관계가 높은 Offset_X, Offset_Y 동시 제어",
+          "before_snippet": "Lasso 단독 시 임의의 1개만 선택될 위험",
+          "operation_desc": "l1_ratio=0.5로 절반씩 결합 패널티 부여",
+          "after_snippet": "➡️ 상관 센서군을 함께 보존하면서 계수 안정화",
+          "concept_rule": "상관성이 높은 센서 변수가 많을 때 Lasso의 임의 탈락 문제를 ElasticNet이 완벽히 해결합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "하이브리드 패널티 세팅",
+            "desc": "l1_ratio로 L1과 L2 가중치 믹스 비율 설정"
+          },
+          {
+            "step": 2,
+            "title": "좌표 하강법(Coordinate Descent) 학습",
+            "desc": "손실 함수를 최소화하며 계수 수렴"
+          },
+          {
+            "step": 3,
+            "title": "균형 잡힌 가중치 벡터 산출",
+            "desc": "피처 축약과 다중공선성 완화 동시 달성"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.linear_model import ElasticNet\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = pd.get_dummies(df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Line\"]], drop_first=True, dtype=int)\ny = df[\"Is_Defective\"]\n\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)\n\n# A. ElasticNet (L1 + L2 하이브리드)\nenet = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42).fit(X_scaled, y)\nres = pd.Series(enet.coef_.round(4), index=X.columns, name='ElasticNet_Coef')\nprint(\"=== [🔥 A. ElasticNet (L1+L2 하이브리드)] 회귀계수 ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-rf-vs-xgb-importance",
+    "category": "11. 트리 앙상블 & 피처 중요도",
+    "root_object": "sklearn.ensemble.",
+    "method_name": "RandomForest vs DecisionTree vs GradientBoosting",
+    "compare_group": "트리 기반 앙상블 불량 예측 모델링",
+    "syntax": "RandomForestClassifier(n_estimators=100) | DecisionTreeClassifier()",
+    "korean_desc": "단일 의사결정나무와 100그루의 랜덤포레스트 앙상블을 SMD 공정 데이터에 훈련하여 불량을 유발하는 핵심 공정 센서 중요도(Feature Importance) 순위를 도출합니다.",
+    "when_to_use": "공정 불량 원인 분석 및 센서 기여도 랭킹 산출 시 랜덤포레스트 특성 중요도 필수 활용.",
+    "pros_cons": "⭐ 단일 결정트리는 과적합(Overfitting)되기 쉬우나, 랜덤포레스트는 배깅(Bagging)과 무작위 피처 샘플링으로 분산을 대폭 축소함.",
+    "default_code": "import pandas as pd\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.tree import DecisionTreeClassifier\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = pd.get_dummies(df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Tact_Time\"]], drop_first=True, dtype=int)\ny = df[\"Is_Defective\"]\n\ndt = DecisionTreeClassifier(max_depth=4, random_state=42).fit(X, y)\nrf = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, y)\n\ncomp = pd.DataFrame({\n    \"단일 DecisionTree\": dt.feature_importances_.round(4),\n    \"100그루 RandomForest\": rf.feature_importances_.round(4)\n}, index=X.columns).sort_values(by=\"100그루 RandomForest\", ascending=False)\n\nprint(\"=== 공정 불량 예측 피처 중요도(Feature Importances) 순위 ===\")\nprint(comp)\n",
+    "spotlight_example": {
+      "title": "🔍 앙상블 불순도 감소 기반 피처 중요도 추적",
+      "target_item": "Offset_X 및 Offset_Y 중요도 1위 등극",
+      "before_snippet": "7개 센서 측정 피처",
+      "operation_desc": "100개 결정트리 분할 시 지니 불순도(Gini Impurity) 감소량 평균화",
+      "after_snippet": "➡️ 장착 오차(Offset)가 불량의 60% 이상을 지배함을 수치로 증명",
+      "concept_rule": "피처 중요도는 해당 센서가 트리의 분기 조건으로 선택되어 불순도를 얼마나 낮췄는지를 총합하여 1.0으로 정규화합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "부트스트랩 샘플링",
+        "desc": "100개 개별 트리에 복원추출된 훈련 데이터셋 주입"
+      },
+      {
+        "step": 2,
+        "title": "무작위 피처 서브셋 분할",
+        "desc": "각 노드마다 sqrt(피처수)개의 센서만 후보로 두고 최적 지니 분할 탐색"
+      },
+      {
+        "step": 3,
+        "title": "중요도 누적 및 정규화",
+        "desc": "전체 트리에서 발생한 지니 감소량을 합산하여 0~1 사이 비중으로 변환"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 상위 3개 핵심 피처만 내림차순 슬라이싱",
+        "code": "rf_top3 = comp['100그루 RandomForest'].head(3)\nprint('핵심 3대 관리 센서:')\nprint(rf_top3)",
+        "effect": "공정 엔지니어가 집중 모니터링해야 할 Top 3 병목 센서를 한눈에 추출",
+        "spotlight_example": {
+          "title": "🔍 3대 병목 센서 슬라이싱 추적",
+          "target_item": "Top 3 관리 피처",
+          "before_snippet": "전체 피처 중요도 테이블",
+          "operation_desc": "sort_values(ascending=False).head(3)",
+          "after_snippet": "➡️ 설비 유지보수 우선순위 결정 자료 도출",
+          "concept_rule": "파레토 법칙(80/20)에 따라 불량을 결정짓는 핵심 상위 센서에 설비 튜닝을 집중합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "중요도 기준 내림차순 정렬",
+            "desc": "가장 큰 지니 감소량을 가진 센서부터 배치"
+          },
+          {
+            "step": 2,
+            "title": "헤드 슬라이싱",
+            "desc": "상위 3건 추출"
+          },
+          {
+            "step": 3,
+            "title": "핵심 센서 요약 출력",
+            "desc": "공정 개선 타겟 명시"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.ensemble import RandomForestClassifier\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = pd.get_dummies(df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Tact_Time\"]], drop_first=True, dtype=int)\ny = df[\"Is_Defective\"]\n\nrf = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, y)\ncomp = pd.Series(rf.feature_importances_.round(4), index=X.columns, name=\"RF_Importance\").sort_values(ascending=False)\n\n# A. 상위 3개 핵심 피처만 내림차순 슬라이싱\nres = comp.head(3)\nprint(\"=== [🔥 A. 상위 3개 핵심 병목 관리 센서] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-svm-vs-knn",
+    "category": "12. 서포트벡터머신 & KNN (거리기반)",
+    "root_object": "sklearn.",
+    "method_name": "SVC(kernel, C, gamma) vs KNeighborsClassifier(k, metric)",
+    "compare_group": "거리 및 마진 기반 분류 모델",
+    "syntax": "SVC(kernel='rbf', C=1.0) | KNeighborsClassifier(n_neighbors=5)",
+    "korean_desc": "SMD 공정 오차 좌표(Offset_X, Offset_Y) 공간에서 최대 마진 초평면을 찾는 SVM과 최근접 K개 이웃 투표 방식인 KNN으로 불량 경계를 분류합니다.",
+    "when_to_use": "비선형 복잡 경계 분류는 SVC(RBF), 직관적인 데이터 국소 패턴 분류는 KNN. (거리 기반이므로 사전 스케일링 필수!).",
+    "pros_cons": "⭐ 거리 기반 알고리즘은 피처 간 단위(스케일) 차이에 절대적인 영향을 받으므로 반드시 StandardScaler를 거쳐야 함.",
+    "default_code": "import pandas as pd\nfrom sklearn.svm import SVC\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.metrics import accuracy_score\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Placement_Force\"]]\ny = df[\"Is_Defective\"]\n\nX_scaled = StandardScaler().fit_transform(X)\n\nsvm = SVC(C=1.0, kernel=\"rbf\", probability=True, random_state=42).fit(X_scaled, y)\nknn = KNeighborsClassifier(n_neighbors=5, metric=\"euclidean\").fit(X_scaled, y)\n\nprint(\"=== SVM vs KNN 훈련 정확도 비교 ===\")\nprint(\"1. SVC (RBF 커널 마진 분류 정확도):\", round(accuracy_score(y, svm.predict(X_scaled)), 4))\nprint(\"2. KNN (k=5 최근접 이웃 투표 정확도):\", round(accuracy_score(y, knn.predict(X_scaled)), 4))\n",
+    "spotlight_example": {
+      "title": "🔍 서포트 벡터 마진 vs 5개 이웃 거리 측정 추적",
+      "target_item": "정상과 불량 경계면에 위치한 경계 샘플 판정",
+      "before_snippet": "표준화된 센서 3차원 공간 좌표",
+      "operation_desc": "SVM은 서포트벡터간 마진 최대화 초평면 기준 / KNN은 유클리디안 거리 최소 5개 이웃 다수결",
+      "after_snippet": "➡️ 복잡한 비선형 불량 경계면을 정밀하게 학습 완료",
+      "concept_rule": "RBF 커널 SVM은 무한 차원으로 매핑하여 비선형 경계를 분리하며, KNN은 인접 인스턴스의 다수결로 판정합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "거리 공간 표준화",
+        "desc": "StandardScaler로 모든 축의 단위를 평균 0, 표준편차 1로 정규화"
+      },
+      {
+        "step": 2,
+        "title": "서포트벡터 추출 및 커널 연산",
+        "desc": "경계면 근처의 서포트벡터를 선별하여 가우시안 RBF 커널 계산"
+      },
+      {
+        "step": 3,
+        "title": "초평면 기반 분류 결정",
+        "desc": "결정 함수 부호에 따라 불량/정상 이진 분류"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. KNN k=3, 5, 7 최적 이웃수 탐색",
+        "code": "res = {f'k={k}': round(accuracy_score(y, KNeighborsClassifier(n_neighbors=k).fit(X_scaled, y).predict(X_scaled)), 4) for k in [3, 5, 7]}\npd.Series(res, name='Accuracy')",
+        "effect": "하이퍼파라미터 k값 변화에 따른 모델 과적합/과소적합 밸런스 점검",
+        "spotlight_example": {
+          "title": "🔍 k값에 따른 일반화 성능 추적",
+          "target_item": "k=3, 5, 7 분류 정확도 비교",
+          "before_snippet": "KNN 모델 후보군",
+          "operation_desc": "k가 작을수록 복잡한 경계(과적합), 클수록 완만한 경계(일반화)",
+          "after_snippet": "➡️ 데이터셋에 최적화된 최적 k 선정",
+          "concept_rule": "k가 너무 작으면 노이즈에 휘둘리고, 너무 크면 전체 클래스 다수 비율에 종속됩니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "k 후보 리스트 순회",
+            "desc": "[3, 5, 7] 파라미터 루프"
+          },
+          {
+            "step": 2,
+            "title": "KNN 훈련 및 예측",
+            "desc": "각 k별 모델 적합 후 예측값 도출"
+          },
+          {
+            "step": 3,
+            "title": "정확도 테이블 매핑",
+            "desc": "판다스 시리즈로 한눈에 비교"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.metrics import accuracy_score\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Placement_Force\"]]\ny = df[\"Is_Defective\"]\nX_scaled = StandardScaler().fit_transform(X)\n\n# A. KNN k=3, 5, 7 최적 이웃수 탐색\nscores = {f'k={k}': round(accuracy_score(y, KNeighborsClassifier(n_neighbors=k).fit(X_scaled, y).predict(X_scaled)), 4) for k in [3, 5, 7]}\nres = pd.Series(scores, name='Accuracy')\nprint(\"=== [🔥 A. KNN k값별 정확도 비교] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-pca-variance-ratio",
+    "category": "13. 비지도학습 차원축소 (PCA)",
+    "root_object": "sklearn.decomposition.",
+    "method_name": "PCA(n_components) & 설명 분산 비율 누적합",
+    "compare_group": "주성분 차원축소 및 공정 센서 압축",
+    "syntax": "pca = PCA(n_components=5) | pca.explained_variance_ratio_.cumsum()",
+    "korean_desc": "마운팅 오차, 납땜 높이/도포량, 진공압, 장착압력 등 서로 상관된 다변량 설비 센서 피처들을 정보 손실 없이 직교하는 2~3개 주성분으로 차원 축소합니다.",
+    "when_to_use": "수십 개 센서 간 다중공선성 해소, 공정 모니터링 2차원 시각화, 연산량 경량화에 PCA 필수.",
+    "pros_cons": "⭐ 주성분 누적 설명 분산 비율(Cumulative Explained Variance)이 80~90% 이상이 되는 최소 주성분 개수를 선정하는 것이 핵심.",
+    "default_code": "import pandas as pd\nfrom sklearn.decomposition import PCA\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Tact_Time\"]]\n\n# PCA 전 표준화(StandardScaler)는 절대 필수!\nX_scaled = StandardScaler().fit_transform(X)\n\npca = PCA(n_components=5)\nX_pca = pca.fit_transform(X_scaled)\n\nvar_ratio = pca.explained_variance_ratio_\ncum_var = var_ratio.cumsum()\n\ncomp = pd.DataFrame({\n    \"개별 설명 분산 비율\": var_ratio.round(4),\n    \"누적 설명 분산 (Cumulative)\": cum_var.round(4)\n}, index=[f\"PC{i+1}\" for i in range(5)])\n\nprint(\"=== SMD 센서 피처 PCA 주성분 설명 분산 비율 ===\")\nprint(comp)\nprint(\"\\n80% 이상 공정 정보를 보존하는 최소 주성분 개수:\", (cum_var >= 0.80).argmax() + 1)\n",
+    "spotlight_example": {
+      "title": "🔍 7차원 센서 공간 ➔ 고유 직교 주성분 압축 추적",
+      "target_item": "7개 센서 컬럼 ➔ PC1~PC5 주성분 압축",
+      "before_snippet": "7차원 다변량 공정 센서 데이터",
+      "operation_desc": "공분산 행렬의 고유값/고유벡터 분해 ➔ 분산이 가장 큰 직교 축 순으로 정렬",
+      "after_snippet": "➡️ 상위 4개 주성분만으로 원본 정보의 80% 이상 완벽 보존",
+      "concept_rule": "PCA는 데이터의 분산(Variance)이 가장 넓게 퍼진 방향을 찾아 새로운 직교 기저 축으로 사영(Projection)합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "센서 데이터 표준화",
+        "desc": "StandardScaler로 평균을 0, 분산을 1로 맞춰 단위 편향 제거"
+      },
+      {
+        "step": 2,
+        "title": "공분산 행렬 및 고유값 분해 (Eigendecomposition)",
+        "desc": "센서 간 공분산 행렬을 구하고 고유값(Eigenvalue)과 고유벡터 계산"
+      },
+      {
+        "step": 3,
+        "title": "주성분 변환 및 분산 비율 누적",
+        "desc": "데이터를 고유벡터에 내적하여 주성분 좌표 산출 및 설명력 계산"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 2차원 투영 평면 좌표 추출",
+        "code": "pca2 = PCA(n_components=2)\ncoords = pd.DataFrame(pca2.fit_transform(X_scaled), columns=['PC1_오차축', 'PC2_물리환경축'])\ncoords.head()",
+        "effect": "7개 다차원 센서 데이터를 2차원 산점도(Scatter Plot)에 시각화할 수 있는 평면 좌표로 축약",
+        "spotlight_example": {
+          "title": "🔍 2차원 산점도 투영 추적",
+          "target_item": "전체 설비 로그의 2D 시각화 좌표",
+          "before_snippet": "7차원 고차원 센서 벡터",
+          "operation_desc": "상위 2개 주성분(PC1, PC2) 평면에 정사영",
+          "after_snippet": "➡️ 2차원 좌표 데이터프레임 생성 (공정 이상치 시각 탐색 가능)",
+          "concept_rule": "사람이 육안으로 관찰할 수 없는 고차원 설비 상태를 2D 모니터링 평면에 직관적으로 투영합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "n_components=2 설정",
+            "desc": "가장 분산이 큰 상위 2개 축만 유지"
+          },
+          {
+            "step": 2,
+            "title": "2차원 변환",
+            "desc": "5,000 x 2 차원의 투영 행렬 생성"
+          },
+          {
+            "step": 3,
+            "title": "시각화용 프레임 반환",
+            "desc": "공정 차트용 2D 데이터 완성"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.decomposition import PCA\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Offset_Angle\", \"Solder_Height\", \"Placement_Force\", \"Reflow_Peak_Temp\", \"Tact_Time\"]]\nX_scaled = StandardScaler().fit_transform(X)\n\n# A. 2차원 투영 평면 좌표 추출\npca2 = PCA(n_components=2)\nres = pd.DataFrame(pca2.fit_transform(X_scaled), columns=['PC1_오차축', 'PC2_물리환경축']).head()\nprint(\"=== [🔥 A. PCA 2차원 투영 평면 좌표 (상위 5건)] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-kmeans-silhouette-dbscan",
+    "category": "14. 비지도 군집 분석 & 실루엣",
+    "root_object": "sklearn.cluster.",
+    "method_name": "KMeans(k, init) vs silhouette_score vs DBSCAN",
+    "compare_group": "비지도 클러스터링 및 이상치 탐지",
+    "syntax": "KMeans(n_clusters=k) | silhouette_score(X, labels) | DBSCAN(eps, min_samples)",
+    "korean_desc": "정답 라벨(라벨링)이 없는 센서 수치(Offset_X, Placement_Force)로부터 자율적으로 유사한 공정 상태 군집을 묶고 실루엣 계수로 최적의 K를 검증합니다.",
+    "when_to_use": "설비 운전 모드 자율 분할은 KMeans, 최적 군집 수 결정은 silhouette_score, 비선형 형태 군집 및 노이즈(-1) 이상치 분리는 DBSCAN.",
+    "pros_cons": "⭐ 실루엣 계수가 0.5 이상이면 응집도와 분리도가 양호함을 의미하며, DBSCAN은 이상치 포인트를 -1로 자동 분류함.",
+    "default_code": "import pandas as pd\nfrom sklearn.cluster import KMeans\nfrom sklearn.metrics import silhouette_score\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Placement_Force\"]]\nX_scaled = StandardScaler().fit_transform(X)\n\n# K=2, 3, 4 실루엣 점수 비교 (군집 품질 평가)\nscores = {}\nfor k in [2, 3, 4]:\n    km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X_scaled)\n    score = silhouette_score(X_scaled, km.labels_)\n    scores[f\"K={k} 군집\"] = round(score, 4)\n\nprint(\"=== K값별 실루엣 계수(Silhouette Score, 높을수록 우수) ===\")\nfor k_label, s_val in scores.items():\n    print(f\"{k_label}: {s_val}\")\n\nbest_k = 3\nkm_best = KMeans(n_clusters=best_k, random_state=42, n_init=10).fit(X_scaled)\ndf_clustered = df[[\"Offset_X\", \"Placement_Force\"]].copy()\ndf_clustered[\"Cluster\"] = km_best.labels_\nprint(f\"\\n=== K={best_k} 군집별 평균 센서 특성 ===\")\nprint(df_clustered.groupby(\"Cluster\").mean().round(2))\n",
+    "spotlight_example": {
+      "title": "🔍 자율 군집 형성 및 실루엣 응집도 추적",
+      "target_item": "K=3 공정 상태 군집화 (정상군, 과압력군, 오차이탈군)",
+      "before_snippet": "라벨 없는 2차원 센서 스케일링 데이터",
+      "operation_desc": "EM 알고리즘 중심점 이동 ➔ 군집 내 거리 a(i)와 인접 군집 거리 b(i)로 실루엣 계산",
+      "after_snippet": "➡️ 명확한 3개 설비 운전 모드 식별 완료",
+      "concept_rule": "실루엣 계수 s = (b - a) / max(a, b). 1에 가까울수록 자신의 군집과 잘 뭉쳐있고 타 군집과 잘 분리됨을 의미합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "중심점(Centroid) 초기화",
+        "desc": "k-means++ 알고리즘으로 서로 멀리 떨어진 3개 중심점 시드 배치"
+      },
+      {
+        "step": 2,
+        "title": "거리 계산 및 중심점 재계산 (반복)",
+        "desc": "유클리디안 최소 거리 기준으로 소속 배정 후 중심점을 평균 위치로 이동"
+      },
+      {
+        "step": 3,
+        "title": "실루엣 계수 평가",
+        "desc": "군집 내 거리 대비 군집 간 분리도를 측정하여 클러스터링 품질 검증"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. DBSCAN (밀도 기반 군집화 & 이상치 -1 탐지)",
+        "code": "from sklearn.cluster import DBSCAN\ndb = DBSCAN(eps=0.5, min_samples=10).fit(X_scaled)\npd.Series(db.labels_, name='DBSCAN_Cluster').value_counts()",
+        "effect": "반경(eps) 내 최소 표본(min_samples) 기준 밀도 군집화로 극단적 공정 이상치를 라벨 -1(노이즈)로 자동 색출",
+        "spotlight_example": {
+          "title": "🔍 밀도 기반 이상치(-1) 자동 분리 추적",
+          "target_item": "밀도가 희박한 외곽 불량 센서 데이터",
+          "before_snippet": "정상 영역에서 멀리 떨어진 이상치들",
+          "operation_desc": "밀도 반경 eps=0.5 내 이웃 수가 10개 미만인 포인트를 노이즈로 마킹",
+          "after_snippet": "➡️ Cluster = -1 (공정 돌발 이상치 자동 탐지)",
+          "concept_rule": "DBSCAN은 군집 개수 K를 미리 정할 필요가 없으며, 기하학적 형태의 군집과 노이즈를 스스로 감지합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "Core Point 식별",
+            "desc": "eps 반경 내 min_samples 이상 이웃을 가진 코어 포인트 탐색"
+          },
+          {
+            "step": 2,
+            "title": "밀도 도달성 확장 (Density Reachable)",
+            "desc": "코어 포인트들을 연결하여 유기적 군집 확장"
+          },
+          {
+            "step": 3,
+            "title": "노이즈 할당 (-1)",
+            "desc": "어느 군집에도 속하지 않는 외톨이 이상치에 -1 라벨 부여"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.cluster import DBSCAN\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Placement_Force\"]]\nX_scaled = StandardScaler().fit_transform(X)\n\n# A. DBSCAN (밀도 기반 군집화 & 이상치 -1 탐지)\ndb = DBSCAN(eps=0.5, min_samples=10).fit(X_scaled)\nres = pd.Series(db.labels_, name='DBSCAN_Cluster').value_counts()\nprint(\"=== [🔥 A. DBSCAN 밀도 군집별 표본 수 (-1: 노이즈/이상치)] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-hierarchical-linkage",
+    "category": "15. 계층적 군집 & 덴드로그램",
+    "root_object": "sklearn.cluster | scipy.cluster.hierarchy",
+    "method_name": "AgglomerativeClustering(linkage) & scipy.cluster.hierarchy",
+    "compare_group": "병합형 계층 군집 및 덴드로그램 수형도",
+    "syntax": "AgglomerativeClustering(n_clusters=3, linkage='ward') | linkage(X, 'ward')",
+    "korean_desc": "개별 PCB 센서 로그에서 출발하여 가장 가까운 샘플끼리 단계적으로 묶어가는 상향식 계층 군집화와 병합 거리 행렬을 분석합니다.",
+    "when_to_use": "군집 간 계층적 포함 관계와 덴드로그램 수형도 분석이 필요할 때 AgglomerativeClustering 및 scipy linkage 활용.",
+    "pros_cons": "⭐ Ward 연결법은 군집 병합 시 분산의 증가량을 최소화하여 가장 균형 잡히고 조밀한 군집을 형성함.",
+    "default_code": "import pandas as pd\nfrom sklearn.cluster import AgglomerativeClustering\nfrom sklearn.preprocessing import StandardScaler\nfrom scipy.cluster.hierarchy import linkage\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna().head(50)\nX = df[[\"Offset_X\", \"Placement_Force\"]]\nX_scaled = StandardScaler().fit_transform(X)\n\n# Ward 연결법으로 계층 군집화\nagg = AgglomerativeClustering(n_clusters=3, linkage=\"ward\")\nlabels = agg.fit_predict(X_scaled)\n\nZ = linkage(X_scaled, method=\"ward\")\n\nprint(\"=== 1. AgglomerativeClustering (Ward 연결) 군집별 샘플 수 ===\")\nprint(pd.Series(labels, name=\"Cluster\").value_counts())\nprint(\"\\n2. scipy 계층 병합 거리 행렬 (Z shape):\", Z.shape)\nprint(\"상위 3개 병합 스텝 [군집1, 군집2, 병합거리, 포함샘플수]:\")\nprint(Z[:3].round(3))\n",
+    "spotlight_example": {
+      "title": "🔍 상향식 계층 병합 트리 단계 추적",
+      "target_item": "50개 샘플의 계층적 트리 병합",
+      "before_snippet": "50개의 개별 클러스터에서 시작",
+      "operation_desc": "두 군집 병합 시 분산 증가량이 가장 적은 쌍을 탐욕적(Greedy)으로 결합",
+      "after_snippet": "➡️ 3개의 최상위 공정 그룹으로 통합 수렴",
+      "concept_rule": "Ward 연결법은 거리 제곱합 증분(ANOVA 원리)을 기준으로 가장 동질적인 그룹끼리 계층 트리를 구성합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "개별 점 클러스터화",
+        "desc": "N개 데이터 포인트를 각각 독립된 1점 클러스터로 초기화"
+      },
+      {
+        "step": 2,
+        "title": "최소 분산 증가 쌍 탐색",
+        "desc": "모든 클러스터 쌍의 Ward 거리 증분을 계산하여 최소값 쌍 선정"
+      },
+      {
+        "step": 3,
+        "title": "덴드로그램 병합 행렬 기록",
+        "desc": "선정된 쌍을 합치고 병합 거리와 샘플 수를 Z 행렬에 누적"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. Complete (최장거리) vs Average (평균거리)",
+        "code": "agg_comp = AgglomerativeClustering(n_clusters=3, linkage='complete').fit_predict(X_scaled)\nagg_avg = AgglomerativeClustering(n_clusters=3, linkage='average').fit_predict(X_scaled)\npd.DataFrame({'Complete': agg_comp, 'Average': agg_avg}).head()",
+        "effect": "연결 방식(Linkage)에 따른 군집 크기 및 모양 형성 특성 비교",
+        "spotlight_example": {
+          "title": "🔍 연결법(Linkage Criteria) 비교 추적",
+          "target_item": "군집 간 거리 정의 방식",
+          "before_snippet": "동일한 2차원 센서 데이터",
+          "operation_desc": "Complete는 두 군집의 가장 먼 점 간 거리 / Average는 모든 쌍의 평균 거리",
+          "after_snippet": "➡️ 연결법에 따른 군집 라벨링 변화 확인",
+          "concept_rule": "Complete는 지름이 작은 구형 군집을 선호하며 이상치에 민감하고, Average는 극단값에 보다 둔감합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "연결법 설정",
+            "desc": "complete 또는 average 기준 선택"
+          },
+          {
+            "step": 2,
+            "title": "쌍별 거리 행렬 업데이트",
+            "desc": "각 스텝마다 병합된 군집의 새 거리를 갱신"
+          },
+          {
+            "step": 3,
+            "title": "최종 클러스터 배정",
+            "desc": "지정된 3개 군집 라벨 반환"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.cluster import AgglomerativeClustering\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna().head(50)\nX = df[[\"Offset_X\", \"Placement_Force\"]]\nX_scaled = StandardScaler().fit_transform(X)\n\n# A. Complete vs Average 연결법 군집화 비교\nagg_comp = AgglomerativeClustering(n_clusters=3, linkage='complete').fit_predict(X_scaled)\nagg_avg = AgglomerativeClustering(n_clusters=3, linkage='average').fit_predict(X_scaled)\nres = pd.DataFrame({'Complete': agg_comp, 'Average': agg_avg}).head()\nprint(\"=== [🔥 A. Complete vs Average 군집 라벨 비교] ===\")\nprint(res)\n"
+      }
+    ]
+  },
+  {
+    "id": "ml-metrics-roc-auc-f1",
+    "category": "16. 모델 평가 지표 & ROC-AUC",
+    "root_object": "sklearn.metrics.",
+    "method_name": "confusion_matrix vs precision_recall_fscore vs roc_auc_score",
+    "compare_group": "불균형 분류 평가지표 종합 마스터",
+    "syntax": "confusion_matrix(y, y_pred) | f1_score(y, y_pred) | roc_auc_score(y, prob)",
+    "korean_desc": "불량률이 약 9%로 불균형한 SMD 공정 데이터에서 단순 정확도(Accuracy)의 함정을 피하고 혼동행렬, 정밀도, 재현율, F1, ROC-AUC를 종합 산출합니다.",
+    "when_to_use": "실제 공정에서는 불량을 놓치는 치명적 손실(FN)을 줄여야 하므로 재현율(Recall)과 ROC-AUC 평가가 절대 필수.",
+    "pros_cons": "⭐ 불균형 데이터에서 정확도는 90% 이상이어도 불량을 하나도 못 맞출 수 있음. F1과 ROC-AUC가 진정한 분류 성능을 대변함.",
+    "default_code": "import pandas as pd\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Placement_Force\", \"Reflow_Peak_Temp\"]]\ny = df[\"Is_Defective\"]\n\nmodel = LogisticRegression(solver=\"liblinear\", random_state=42).fit(X, y)\ny_pred = model.predict(X)\ny_prob = model.predict_proba(X)[:, 1]\n\ncm = confusion_matrix(y, y_pred)\n\nmetrics_df = pd.DataFrame({\n    \"평가지표\": [\"정확도 (Accuracy)\", \"정밀도 (Precision)\", \"재현율 (Recall/Sensitivity)\", \"F1-Score\", \"ROC-AUC Score\"],\n    \"공정 의미\": [\"전체 판정 중 정답 비율\", \"불량 판정 중 실제 불량 비율\", \"실제 불량을 놓치지 않고 잡은 비율\", \"정밀도와 재현율의 조화평균\", \"임계값 무관 판별력 면적\"],\n    \"측정 수치\": [\n        round(accuracy_score(y, y_pred), 4),\n        round(precision_score(y, y_pred), 4),\n        round(recall_score(y, y_pred), 4),\n        round(f1_score(y, y_pred), 4),\n        round(roc_auc_score(y, y_prob), 4)\n    ]\n})\n\nprint(\"=== 공정 불량 예측 혼동행렬 (Confusion Matrix) ===\")\nprint(pd.DataFrame(cm, index=[\"실제 정상(0)\", \"실제 불량(1)\"], columns=[\"예측 정상(0)\", \"예측 불량(1)\"]))\nprint(\"\\n=== 모델 종합 평가지표 리포트 ===\")\nprint(metrics_df.to_string(index=False))\n",
+    "spotlight_example": {
+      "title": "🔍 실제 불량 미검출(FN) 억제 및 평가지표 추적",
+      "target_item": "혼동행렬 4대 요소 [TN, FP, FN, TP]",
+      "before_snippet": "5,000건 실제값 vs 로지스틱 예측값",
+      "operation_desc": "혼동행렬 교차 카운트 ➔ 정밀도, 재현율, F1 조화평균 동시 연산",
+      "after_snippet": "➡️ 재현율(Recall) 집중 관리를 통한 신뢰성 있는 품질 보증 수치 확보",
+      "concept_rule": "F1 = 2 * (P * R) / (P + R). 극단적인 불균형 데이터셋에서 모델의 안정성을 평가하는 가장 신뢰받는 지표입니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "확률값 추론",
+        "desc": "model.predict_proba()로 각 행의 불량 발생 확률 P(Y=1) 산출"
+      },
+      {
+        "step": 2,
+        "title": "임계값(0.5) 이진화 및 혼동행렬 구성",
+        "desc": "P >= 0.5 기준으로 판정하여 TP, FP, FN, TN 격자 분할"
+      },
+      {
+        "step": 3,
+        "title": "ROC-AUC 곡선 적분",
+        "desc": "임계값을 0부터 1까지 이동시키며 TPR/FPR 곡선 아래 면적(AUC) 적분"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. 임계값(Threshold) 0.3으로 재현율(Recall) 극대화",
+        "code": "y_pred_adj = (y_prob >= 0.3).astype(int)\nprint('임계값 0.3 조정 후 재현율(Recall):', round(recall_score(y, y_pred_adj), 4))\nprint('새로운 혼동행렬:\\n', confusion_matrix(y, y_pred_adj))",
+        "effect": "불량 조기 색출을 위해 판정 임계값을 0.5에서 0.3으로 낮춰 불량 누락(FN)을 최소화",
+        "spotlight_example": {
+          "title": "🔍 판정 임계값(Threshold) 튜닝 추적",
+          "target_item": "불량 판정 기준을 0.3으로 완화",
+          "before_snippet": "임계값 0.5 기준 미검출 발생",
+          "operation_desc": "y_prob >= 0.3 판정 ➔ 위험 징후 샘플을 선제적으로 불량 분류",
+          "after_snippet": "➡️ 재현율(Recall) 상승으로 고객사 유출 불량 원천 차단",
+          "concept_rule": "제조업에서는 가성 불량(FP) 비용보다 실불량 유출(FN) 비용이 압도적으로 크므로 임계값 하향 조정을 실무에서 자주 사용합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "연속 확률 배열 수신",
+            "desc": "predict_proba() 결과 활용"
+          },
+          {
+            "step": 2,
+            "title": "사용자 임계값 비교",
+            "desc": "prob >= 0.3 불리언 배열 생성"
+          },
+          {
+            "step": 3,
+            "title": "평가지표 재계산",
+            "desc": "Recall 상승 및 혼동행렬 변화 확인"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import confusion_matrix, recall_score\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nX = df[[\"Offset_X\", \"Offset_Y\", \"Placement_Force\", \"Reflow_Peak_Temp\"]]\ny = df[\"Is_Defective\"]\n\nmodel = LogisticRegression(solver=\"liblinear\", random_state=42).fit(X, y)\ny_prob = model.predict_proba(X)[:, 1]\n\n# A. 임계값(Threshold) 0.3으로 재현율(Recall) 극대화\ny_pred_adj = (y_prob >= 0.3).astype(int)\ncm_adj = confusion_matrix(y, y_pred_adj)\nres = pd.DataFrame(cm_adj, index=[\"실제정상(0)\", \"실제불량(1)\"], columns=[\"예측정상(0)\", \"예측불량(1)\"])\nprint(\"=== [🔥 A. 임계값 0.3 조정 혼동행렬] ===\")\nprint(res)\nprint(\"재현율(Recall):\", round(recall_score(y, y_pred_adj), 4))\n"
+      }
+    ]
+  },
+  {
+    "id": "scipy-stats-hypo-tests",
+    "category": "17. 통계 가설검정 4대장 (t-test/ANOVA/Chi2)",
+    "root_object": "scipy.stats.",
+    "method_name": "ttest_ind(Welch) vs f_oneway vs chi2_contingency vs shapiro",
+    "compare_group": "통계적 가설검정 및 공정 유의차 판정",
+    "syntax": "ttest_ind(a, b, equal_var=False) | f_oneway(*groups) | chi2_contingency(table)",
+    "korean_desc": "SMD 공정 라인 간 오차 평균 차이(t-검정), 설비 4종 간 납땜 온도 차이(일원배치 분산분석 ANOVA), 설비와 불량 발생의 독립성(카이제곱 검정)을 검증합니다.",
+    "when_to_use": "두 집단 평균 비교는 t-검정, 세 집단 이상 평균 비교는 ANOVA, 범주 간 연관성 분석은 Chi-Square, 정규성 검정은 Shapiro.",
+    "pros_cons": "⭐ p-value가 유의수준(0.05) 미만이면 귀무가설(차이 없다/독립이다)을 기각하고 '통계적으로 유의한 차이가 있다'고 판정함.",
+    "default_code": "import pandas as pd\nfrom scipy import stats\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\n\n# 1. Two-sample T-test (Welch: SMD_Line_A vs SMD_Line_B 간 Offset_X 평균 차이)\nline_a = df[df[\"Line\"] == \"SMD_Line_A\"][\"Offset_X\"]\nline_b = df[df[\"Line\"] == \"SMD_Line_B\"][\"Offset_X\"]\nt_stat, p_val_t = stats.ttest_ind(line_a, line_b, equal_var=False)\n\n# 2. One-Way ANOVA (Mounter 4개 설비 간 Reflow_Peak_Temp 차이 검정)\nm1 = df[df[\"Machine\"] == \"Mounter_01\"][\"Reflow_Peak_Temp\"]\nm2 = df[df[\"Machine\"] == \"Mounter_02\"][\"Reflow_Peak_Temp\"]\nm3 = df[df[\"Machine\"] == \"Mounter_03\"][\"Reflow_Peak_Temp\"]\nm4 = df[df[\"Machine\"] == \"Mounter_04\"][\"Reflow_Peak_Temp\"]\nf_stat, p_val_f = stats.f_oneway(m1, m2, m3, m4)\n\n# 3. Chi-Square (설비 종류와 불량 발생 여부의 독립성 검정)\ncross_tab = pd.crosstab(df[\"Machine\"], df[\"Is_Defective\"])\nchi2, p_val_chi2, dof, _ = stats.chi2_contingency(cross_tab, correction=False)\n\nprint(\"=== 📊 공정 통계 가설검정 요약 리포트 (유의수준 a = 0.05) ===\")\nprint(\"1. 독립표본 T-test (Line A vs B 장착 오차): t=%.3f, p-value=%.5f -> %s\" % (t_stat, p_val_t, \"유의한 차이 있음 (귀무 기각)\" if p_val_t < 0.05 else \"차이 없음 (귀무 채택)\"))\nprint(\"2. 일원배치 ANOVA (설비 4종 간 피크온도): F=%.3f, p-value=%.5f -> %s\" % (f_stat, p_val_f, \"설비별 유의한 차이 있음 (귀무 기각)\" if p_val_f < 0.05 else \"설비 간 동일함 (귀무 채택)\"))\nprint(\"3. 카이제곱 검정 (설비와 불량의 연관성): chi2=%.3f, p-value=%.5f -> %s\" % (chi2, p_val_chi2, \"강한 연관성 존재 (귀무 기각)\" if p_val_chi2 < 0.05 else \"서로 독립적임 (귀무 채택)\"))\n",
+    "spotlight_example": {
+      "title": "🔍 p-value 판정 기반 공정 설비 이상 유의차 추적",
+      "target_item": "3대 가설검정 p-value 종합 비교",
+      "before_snippet": "설비 센서 표본 그룹들",
+      "operation_desc": "t-통계량, F-통계량, Chi2 통계량 산출 ➔ 자유도(df) 확률분포에서 p-value 적분",
+      "after_snippet": "➡️ p < 0.05 기준으로 명확한 통계적 공정 개선 근거 수립",
+      "concept_rule": "p-value는 '귀무가설(차이가 없다)이 참일 때, 현재 표본과 같은 극단적인 결과가 우연히 관측될 확률'을 의미합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "가설 설정",
+        "desc": "귀무가설 H0(그룹 간 차이 없다) vs 대립가설 H1(차이가 존재한다)"
+      },
+      {
+        "step": 2,
+        "title": "검정통계량 산출",
+        "desc": "t-통계량, F-비율, 피어슨 카이제곱 통계량 수식 계산"
+      },
+      {
+        "step": 3,
+        "title": "p-value 비교 및 의사결정",
+        "desc": "유의수준 0.05와 비교하여 귀무가설 기각 여부 최종 확정"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. Shapiro-Wilk 정규성 검정 & Levene 등분산 검정",
+        "code": "stat_s, p_s = stats.shapiro(df['Offset_X'].sample(100, random_state=42))\nstat_l, p_l = stats.levene(line_a, line_b)\nprint(f'정규성검정 p-value: {p_s:.5f}, 등분산검정 p-value: {p_l:.5f}')",
+        "effect": "모수 검정(t-test/ANOVA) 수행 전 데이터가 정규분포와 등분산성을 만족하는지 사전 검증",
+        "spotlight_example": {
+          "title": "🔍 모수 통계 전제조건 사전 진단 추적",
+          "target_item": "Offset_X 센서 정규성 및 등분산성",
+          "before_snippet": "Line A, Line B 수치 표본",
+          "operation_desc": "Shapiro-Wilk W-통계량 및 Levene W-통계량 동시 검정",
+          "after_snippet": "➡️ 가정 충족 여부에 따른 Welch 검정 선택 타당성 확보",
+          "concept_rule": "정규성 또는 등분산이 깨지면 Welch t-검정이나 비모수 검정(Mann-Whitney)을 적용해야 합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "표본 추출",
+            "desc": "Shapiro 검정을 위한 표본 데이터 준비"
+          },
+          {
+            "step": 2,
+            "title": "가정 검정 통계량 산출",
+            "desc": "정규분포 잔차 및 분산 균일성 계산"
+          },
+          {
+            "step": 3,
+            "title": "검정 방법 선택 가이드",
+            "desc": "등분산 기각 시 equal_var=False 필수 지정"
+          }
+        ],
+        "full_code": "import pandas as pd\nfrom scipy import stats\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\nline_a = df[df[\"Line\"] == \"SMD_Line_A\"][\"Offset_X\"]\nline_b = df[df[\"Line\"] == \"SMD_Line_B\"][\"Offset_X\"]\n\n# A. Shapiro-Wilk 정규성 검정 & Levene 등분산 검정\nstat_s, p_s = stats.shapiro(df['Offset_X'].sample(100, random_state=42))\nstat_l, p_l = stats.levene(line_a, line_b)\n\nres = pd.DataFrame({\n    \"검정명\": [\"Shapiro-Wilk (정규성 검정)\", \"Levene (등분산 검정)\"],\n    \"검정통계량\": [round(stat_s, 4), round(stat_l, 4)],\n    \"p-value\": [round(p_s, 5), round(p_l, 5)],\n    \"판정 (a=0.05)\": [\"정규성 만족\" if p_s >= 0.05 else \"정규성 위배\", \"등분산 만족\" if p_l >= 0.05 else \"이분산 (Welch t-검정 필수)\"]\n})\nprint(\"=== [🔥 A. 정규성 & 등분산 가정 검정 요약표] ===\")\nprint(res.to_string(index=False))\n"
+      }
+    ]
+  },
+  {
+    "id": "scipy-stats-confidence-interval",
+    "category": "18. 신뢰구간 & 표본오차 (CI 95%)",
+    "root_object": "scipy.stats.",
+    "method_name": "stats.t.ppf() & 표본오차(Margin of Error) 손계산",
+    "compare_group": "모평균 추정 및 통계적 공정 신뢰도",
+    "syntax": "stats.t.ppf(0.975, df) * (s / sqrt(n)) | stats.t.interval(0.95, df, loc, scale)",
+    "korean_desc": "SMD 공정에서 50개 샘플 로트를 무작위 추출하여 마운트 장착 오차(Offset_X)의 모평균 95% 신뢰구간과 표본오차(Margin of Error)를 정밀 추정합니다.",
+    "when_to_use": "전수 검사가 불가능한 대량 생산 라인에서 표본 로트만으로 전체 공정 평균 품질을 보증할 때 신뢰구간 필수.",
+    "pros_cons": "⭐ 표본 크기 n-1 자유도를 갖는 t-분포 ppf 분위수를 사용하여 소표본에서도 정확한 신뢰 한계를 계산함.",
+    "default_code": "import pandas as pd\nimport numpy as np\nfrom scipy import stats\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\noffset_sample = df[\"Offset_X\"].sample(50, random_state=42)\n\nn = len(offset_sample)\nmean = offset_sample.mean()\ns = offset_sample.std(ddof=1) # 표본 표준편차 (ddof=1 필수!)\n\n# 95% 신뢰수준 (양측 검정이므로 1 - 0.05/2 = 0.975)\nt_val = stats.t.ppf(0.975, df=n-1)\nmargin = t_val * (s / np.sqrt(n))\n\nci_lower = mean - margin\nci_upper = mean + margin\n\nprint(\"=== 표본 크기 n=%d SMD 마운트 오차 모평균 95%% 신뢰구간 추정 ===\" % n)\nprint(\"1. 표본평균 (Mean): %.3f um\" % mean)\nprint(\"2. 표본표준편차 (s): %.3f um\" % s)\nprint(\"3. t 임계값 t(0.025, df=%d): %.4f\" % (n-1, t_val))\nprint(\"4. 표본오차 (Margin of Error): ±%.3f um\" % margin)\nprint(\"5. 95%% 모평균 신뢰구간: [%.3f um, %.3f um]\" % (ci_lower, ci_upper))\n",
+    "spotlight_example": {
+      "title": "🔍 표본오차(Margin of Error) 및 t-분포 신뢰구간 추적",
+      "target_item": "50개 표본을 통한 공정 모평균 95% 보증",
+      "before_snippet": "50개 로트 오차 샘플 (평균: 약 0um 내외)",
+      "operation_desc": "t.ppf(0.975, df=49) 임계값 산출 ➔ 표준오차(s/sqrt(n))에 곱하여 표본오차 도출",
+      "after_snippet": "➡️ 95% 신뢰구간 한계 도출 (공정 모평균이 포함될 구간 확정)",
+      "concept_rule": "신뢰구간 = Mean ± t * (s / sqrt(n)). 동일한 방식으로 100번 표본을 추출했을 때 95번은 이 구간 내에 참된 모평균이 포함됨을 뜻합니다."
+    },
+    "process_flow": [
+      {
+        "step": 1,
+        "title": "표본 통계량 산출",
+        "desc": "표본 크기 n, 표본평균 x_bar, 불편 표준편차 s (ddof=1) 계산"
+      },
+      {
+        "step": 2,
+        "title": "표준오차(SE) 및 t 임계값 도출",
+        "desc": "SE = s / sqrt(n) 및 scipy.stats.t.ppf(1 - alpha/2, df=n-1) 연산"
+      },
+      {
+        "step": 3,
+        "title": "표본오차 및 신뢰구간 바운더리 완성",
+        "desc": "Margin of Error = t * SE ➔ [Mean - Margin, Mean + Margin] 구간 출력"
+      }
+    ],
+    "alternatives": [
+      {
+        "label": "A. scipy stats.t.interval 원라이너",
+        "code": "ci = stats.t.interval(0.95, df=n-1, loc=mean, scale=s/np.sqrt(n))\nprint(f'stats.t.interval 산출 95% 신뢰구간: [{ci[0]:.3f} um, {ci[1]:.3f} um]')",
+        "effect": "손계산 수식 없이 scipy 내장 함수 1줄로 95% 신뢰구간 하한/상한 즉시 반환",
+        "spotlight_example": {
+          "title": "🔍 내장 interval 함수 원라이너 추적",
+          "target_item": "scipy.stats.t.interval() 간편 호출",
+          "before_snippet": "mean, s, n 계산 완료 상태",
+          "operation_desc": "t.interval(0.95, df=49, loc=mean, scale=s/sqrt(n))",
+          "after_snippet": "➡️ 수식 손계산 결과와 100% 동일한 신뢰구간 반환",
+          "concept_rule": "복잡한 ppf와 오차 곱셈 과정을 함수 내부에서 원자적으로 처리합니다."
+        },
+        "process_flow": [
+          {
+            "step": 1,
+            "title": "신뢰수준 및 모수 파라미터 전달",
+            "desc": "confidence=0.95, loc=평균, scale=표준오차 지정"
+          },
+          {
+            "step": 2,
+            "title": "t-분포 양측 누적확률 역함수 계산",
+            "desc": "하위 2.5%, 상위 97.5% 지점 자동 탐색"
+          },
+          {
+            "step": 3,
+            "title": "(하한, 상한) 튜플 반환",
+            "desc": "2개 값 튜플 출력"
+          }
+        ],
+        "full_code": "import pandas as pd\nimport numpy as np\nfrom scipy import stats\n\ndf = pd.read_csv(\"data/smd_process_log.csv\").dropna()\noffset_sample = df[\"Offset_X\"].sample(50, random_state=42)\nn = len(offset_sample)\nmean = offset_sample.mean()\ns = offset_sample.std(ddof=1)\n\n# A. scipy stats.t.interval 원라이너\nci = stats.t.interval(0.95, df=n-1, loc=mean, scale=s/np.sqrt(n))\nres = pd.Series({\"표본평균\": round(mean, 3), \"95%_CI_하한\": round(ci[0], 3), \"95%_CI_상한\": round(ci[1], 3)})\nprint(\"=== [🔥 A. stats.t.interval 95% 신뢰구간 산출 결과] ===\")\nprint(res)\n"
+      }
+    ]
+  }
+]
