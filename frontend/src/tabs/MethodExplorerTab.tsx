@@ -633,9 +633,9 @@ print(res)
               <Zap className="w-4 h-4 text-amber-400 animate-pulse" /> 1-Click Pandas & Machine Learning Dataflow Studio
             </div>
             <h1 className="text-xl md:text-2xl font-black text-white tracking-tight flex items-center gap-2 mt-0.5">
-              1-Click 전처리 & 머신러닝 실행실험실
-              <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full font-mono font-normal">
-                DS Level 3 Master
+              공정 데이터 처리 &amp; 모델링 스튜디오
+              <span className="text-xs px-2 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded-full font-mono font-normal">
+                SMD Process Engine
               </span>
             </h1>
           </div>
@@ -677,8 +677,8 @@ print(res)
         {showMethodList && (
         <div className="lg:col-span-4 xl:col-span-3 space-y-2">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between">
-            <span>실전 핵심 문법 ({filteredMethods.length})</span>
-            <span className="text-amber-400 font-mono text-[11px]">터치 즉시 실행</span>
+            <span>데이터 엔지니어링 모듈 ({filteredMethods.length})</span>
+            <span className="text-cyan-400 font-mono text-[11px]">원클릭 실행</span>
           </div>
           <div className="space-y-1.5 max-h-[76vh] overflow-y-auto pr-1">
             {filteredMethods.map((m) => {
@@ -946,8 +946,8 @@ print(res)
               <div className="bg-slate-900/95 px-3.5 py-2.5 border-b border-slate-800/90 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
                   <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                  <Code2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>파이썬 시험 실행 코드</span>
+                  <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>파이썬 실행 코드</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -1029,7 +1029,7 @@ print(res)
             <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex items-start gap-2.5 text-xs text-slate-300">
               <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div>
-                <strong className="text-amber-300 font-bold mr-1">실무 & 시험 가이드:</strong>
+                <strong className="text-cyan-300 font-bold mr-1">엔지니어링 활용 팁:</strong>
                 <span>{selectedMethod.when_to_use}</span>
               </div>
             </div>
