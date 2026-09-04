@@ -26,7 +26,7 @@ export default function App() {
         <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-400">
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/60">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="font-mono text-slate-300">SMD Process Log (5,000 Rows x 19 Cols)</span>
+            <span className="font-mono text-slate-300">SMD Process Log (35,000 Rows x 19 Cols)</span>
           </div>
         </div>
       </header>

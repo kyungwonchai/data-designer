@@ -73,10 +73,10 @@
         "effect": "파이썬 반복문 순회 없이 C-레벨 벡터 연산으로 대용량 설비 로그 초고속 병렬 판정",
         "spotlight_example": {
           "title": "🔍 C-엔진 벡터 마스크 동시 평가 추적",
-          "target_item": "전체 5,000건 센서 로그 동시 처리",
+          "target_item": "전체 35,000건 센서 로그 동시 처리",
           "before_snippet": "Offset_X, Offset_Y 넘파이 배열",
           "operation_desc": "불리언 마스크 배열 동시 생성 ➔ 조건에 따라 choices 포인터 직접 매핑",
-          "after_snippet": "➡️ 5,000행 판정 처리 소요시간: 1ms 미만",
+          "after_snippet": "➡️ 35,000행 판정 처리 소요시간: 1ms 미만",
           "concept_rule": "루프 순회 없이 넘파이 SIMD 벡터 명령어를 활용하므로 apply 대비 50~100배 이상의 성능을 자랑합니다."
         },
         "process_flow": [
@@ -215,7 +215,7 @@
     "spotlight_example": {
       "title": "🔍 설비 및 온도 교차 필터링 대표 추적",
       "target_item": "Mounter_01 고온 공정 PCB 추출",
-      "before_snippet": "전체 5,000건 공정 설비 로그",
+      "before_snippet": "전체 35,000건 공정 설비 로그",
       "operation_desc": "조건 (Machine == 'Mounter_01' & Reflow_Peak_Temp >= 245.0) 판정 ➔ 일치 행만 통과",
       "after_snippet": "➡️ [PCB_ID, Line, Machine, Component, Reflow_Peak_Temp, Is_Defective] 추출",
       "concept_rule": "loc[행조건, 열목록]은 불리언 마스크 필터링과 열 슬라이싱을 1번에 원자적으로 안전하게 수행합니다."
@@ -314,7 +314,7 @@
         "effect": "Placement_Force(장착 압력)를 정확히 20%씩 5개 균등 구간으로 분할하여 통계적 편향 해소",
         "spotlight_example": {
           "title": "🔍 5분위수 균등 표본 분할 추적",
-          "target_item": "전체 5,000건 노즐 압력 데이터",
+          "target_item": "전체 35,000건 노즐 압력 데이터",
           "before_snippet": "연속 수치 1.5N ~ 5.5N",
           "operation_desc": "상위 20%, 40%, 60%, 80% 지점 계산 후 5등분",
           "after_snippet": "➡️ 각 구간당 정확히 1,000건씩 배분",
@@ -355,7 +355,7 @@
     "spotlight_example": {
       "title": "🔍 설비별 다중 센서 종합 집계 추적",
       "target_item": "Mounter_01 ~ Mounter_04 그룹 집계",
-      "before_snippet": "5,000행의 개별 설비 센서 로그",
+      "before_snippet": "35,000행의 개별 설비 센서 로그",
       "operation_desc": "Machine별 그룹핑 ➔ X/Y 절댓값 평균, 최고온도, 불량률 동시 연산",
       "after_snippet": "➡️ 4개 설비 행으로 압축된 요약 리포트 매트릭스 생성",
       "concept_rule": "named aggregation 구문(새컬럼명=(원본컬럼, 함수))을 통해 명확하고 가독성 높은 요약표를 즉시 구성합니다."
@@ -381,7 +381,7 @@
       {
         "label": "A. ⚡ transform (행 수 유지 브로드캐스팅)",
         "code": "df['Machine_Mean_Force'] = df.groupby('Machine')['Placement_Force'].transform('mean')\ndf[['Machine', 'Placement_Force', 'Machine_Mean_Force']].head()",
-        "effect": "설비별 평균 압력을 계산하여 원본 5,000행 크기 그대로 1:1 매핑 (상대 편차 파생변수 생성)",
+        "effect": "설비별 평균 압력을 계산하여 원본 35,000행 크기 그대로 1:1 매핑 (상대 편차 파생변수 생성)",
         "spotlight_example": {
           "title": "🔍 transform 브로드캐스팅 추적",
           "target_item": "PCB_00001 (Mounter_03 소속)",
@@ -404,7 +404,7 @@
           {
             "step": 3,
             "title": "원본 크기 시리즈 반환",
-            "desc": "5,000행 길이의 브로드캐스팅 파생변수 완성"
+            "desc": "35,000행 길이의 브로드캐스팅 파생변수 완성"
           }
         ],
         "full_code": "import pandas as pd\ndf = pd.read_csv(\"data/smd_process_log.csv\")\n\n# A. transform (행 수 유지 브로드캐스팅)\ndf['Machine_Mean_Force'] = df.groupby('Machine')['Placement_Force'].transform('mean')\nres = df[['Machine', 'Placement_Force', 'Machine_Mean_Force']].head()\nprint(\"=== [🔥 A. transform 브로드캐스팅 결과] ===\")\nprint(res)\n"
@@ -1021,7 +1021,7 @@
           {
             "step": 2,
             "title": "2차원 변환",
-            "desc": "5,000 x 2 차원의 투영 행렬 생성"
+            "desc": "35,000 x 2 차원의 투영 행렬 생성"
           },
           {
             "step": 3,
@@ -1187,7 +1187,7 @@
     "spotlight_example": {
       "title": "🔍 실제 불량 미검출(FN) 억제 및 평가지표 추적",
       "target_item": "혼동행렬 4대 요소 [TN, FP, FN, TP]",
-      "before_snippet": "5,000건 실제값 vs 로지스틱 예측값",
+      "before_snippet": "35,000건 실제값 vs 로지스틱 예측값",
       "operation_desc": "혼동행렬 교차 카운트 ➔ 정밀도, 재현율, F1 조화평균 동시 연산",
       "after_snippet": "➡️ 재현율(Recall) 집중 관리를 통한 신뢰성 있는 품질 보증 수치 확보",
       "concept_rule": "F1 = 2 * (P * R) / (P + R). 극단적인 불균형 데이터셋에서 모델의 안정성을 평가하는 가장 신뢰받는 지표입니다."
