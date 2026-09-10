@@ -14,10 +14,10 @@ start() {
         fi
     fi
     echo "📊 Data Designer 서버 시작…"
-    node server.mjs >> "$LOG_FILE" 2>&1 &
+    nohup /usr/bin/node server.mjs >> "$LOG_FILE" 2>&1 &
     PID=$!
     echo $PID > "$PID_FILE"
-    disown -h $PID 2>/dev/null || true
+    sleep 0.5
     echo "✅ 시작됨 (PID: $PID) — http://localhost:$PORT/data-designer/"
 }
 
